@@ -34,18 +34,28 @@ export default defineRouter(function ({ store }) {
     history: createHistory(process.env.VUE_ROUTER_BASE),
   });
 
-  Router.beforeEach((to, from, next) => {
+  // A saved session is re-checked once on startup, before the first navigation resolves, so a
+  // reload does not bounce through the login page while the check is still running.
+  let sessionRestored = false;
+
+  Router.beforeEach(async (to) => {
     const nodeStore = useNodeStore(store);
+    if (to.name !== 'Login' && !nodeStore.isConnected && nodeStore.loginData && !sessionRestored) {
+      sessionRestored = true;
+      nodeStore.setPreviousRoute(to);
+      await nodeStore.connectionCheck();
+    }
     if (to.name !== 'Login' && !nodeStore.isConnected) {
       nodeStore.setPreviousRoute(to);
-      next({ name: 'Login' });
-    } else if (to.params.name) {
+      return { name: 'Login' };
+    }
+    if (to.params.name) {
       if (!nodeStore.currentCollection || nodeStore.currentCollection.name !== to.params.name) {
         // TODO check await needed?
         nodeStore.loadCurrentCollectionByName(to.params.name as string);
       }
-      next();
-    } else next();
+    }
+    return true;
   });
 
   return Router;

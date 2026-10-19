@@ -161,7 +161,7 @@ export const useNodeStore = defineStore('node', {
         return;
       }
       if (this.loginData) {
-        this.api
+        await this.api
           ?.get('/metrics.json')
           ?.then(async (response: AxiosResponse) => {
             this.setData({
@@ -411,6 +411,12 @@ export const useNodeStore = defineStore('node', {
       this.setNodeData(null);
       this.setCurrentCollection(null);
       this.setIsConnected(false);
+    },
+    /** User-initiated logout: also forgets every saved server, since history holds API keys. */
+    signOut() {
+      this.logout();
+      this.loginHistory = [];
+      LocalStorage.remove(STORAGE_KEY_LOGIN_HISTORY);
     },
     loadCurrentCollection(collection: CollectionSchema | null) {
       this.setCurrentCollection(collection);
@@ -662,7 +668,11 @@ export const useNodeStore = defineStore('node', {
     /*** mutations from vuex migration ****/
     setNodeData(payload: { apiKey: string; node: CustomNodeConfiguration } | null) {
       this.loginData = payload;
-      LocalStorage.set(STORAGE_KEY_LOGIN, payload);
+      if (payload) {
+        LocalStorage.set(STORAGE_KEY_LOGIN, payload);
+      } else {
+        LocalStorage.remove(STORAGE_KEY_LOGIN);
+      }
     },
     setPiaSession(payload: PiaSession | null) {
       this.piaSession = payload;
