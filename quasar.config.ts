@@ -55,6 +55,8 @@ export default defineConfig((/* ctx */) => {
       publicPath:
         process.env.PUBLIC_PATH ??
         (process.env.NODE_ENV === 'development' ? '/' : '/typesense-dashboard'),
+      // deploy.sh builds into a scratch folder (DIST_DIR) so the live site keeps serving
+      ...(process.env.DIST_DIR ? { distDir: process.env.DIST_DIR } : {}),
       // analyze: true,
       env: {
         // PIA (auth) and the Typesense gateway; overridable at build time

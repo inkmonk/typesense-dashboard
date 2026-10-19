@@ -13,8 +13,10 @@ set -euo pipefail
 # The dashboard is a static SPA. nginx serves WEB_ROOT at /typesense-dashboard/, so a
 # deploy is a directory swap: no restart and no nginx reload.
 #
-# Set these once for this server (or pass them as environment variables):
-#   WEB_ROOT     directory nginx serves at /typesense-dashboard/ (nginx `root`/`alias` target)
+# Defaults match the typesense.printo.in server, where nginx has
+#   location /typesense-dashboard/ { alias /home/ubuntu/typesense-dashboard/dist/spa/; }
+# Override with environment variables if that changes:
+#   WEB_ROOT     directory nginx serves at /typesense-dashboard/ (the alias target)
 #   VERIFY_URL   public URL used for the post-deploy check
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
@@ -23,27 +25,31 @@ ok()   { echo -e "${GREEN}✓${NC} $1"; }
 warn() { echo -e "${YELLOW}!${NC} $1"; }
 die()  { echo -e "${RED}✗${NC} $1"; exit 1; }
 
-WEB_ROOT="${WEB_ROOT:-}"
 VERIFY_URL="${VERIFY_URL:-https://typesense.printo.in/typesense-dashboard/}"
 EXPECTED_BRANCH="${EXPECTED_BRANCH:-main}"
 PUBLIC_PATH="${PUBLIC_PATH:-/typesense-dashboard}"
 
 REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
+WEB_ROOT="${WEB_ROOT:-$REPO_DIR/dist/spa}"
+BUILD_DIR="dist/spa-build"
 LAST_DEPLOY_FILE="$REPO_DIR/.last-deploy-commit"
 MODE="${1:-deploy}"
 
-[ -n "$WEB_ROOT" ] || die "WEB_ROOT is not set. Find nginx's root for /typesense-dashboard/ and run: WEB_ROOT=/path ./deploy.sh"
-[ -d "$WEB_ROOT" ] || die "WEB_ROOT '$WEB_ROOT' does not exist."
+[ -d "$WEB_ROOT" ] || die "WEB_ROOT '$WEB_ROOT' does not exist. Set WEB_ROOT to nginx's alias target for /typesense-dashboard/."
 PREV_ROOT="${WEB_ROOT}.prev"
 NEW_ROOT="${WEB_ROOT}.new"
 
-# nvm only loads in interactive shells; pin the node the build needs so the script
-# also works over plain `ssh host ./deploy.sh`. Quasar app-vite needs Node 18+.
+# nvm only loads in interactive shells; pin it when present so the script also works over
+# plain `ssh host ./deploy.sh`. Without nvm the system node is used. Quasar app-vite
+# needs Node 18.18 or newer.
 PINNED_NODE="/home/ubuntu/.nvm/versions/node/v22.22.0/bin"
 [ -d "$PINNED_NODE" ] && export PATH="$PINNED_NODE:$PATH"
 command -v node >/dev/null 2>&1 || die "node not on PATH (expected $PINNED_NODE)"
 NODE_MAJOR="$(node -p 'process.versions.node.split(".")[0]')"
-[ "$NODE_MAJOR" -ge 20 ] || die "Node $(node -v) is too old; need 20 or newer."
+NODE_MINOR="$(node -p 'process.versions.node.split(".")[1]')"
+if [ "$NODE_MAJOR" -lt 18 ] || { [ "$NODE_MAJOR" -eq 18 ] && [ "$NODE_MINOR" -lt 18 ]; }; then
+  die "Node $(node -v) is too old; need 18.18 or newer."
+fi
 
 # --- one deploy at a time -----------------------------------------------------
 LOCK_FILE="/tmp/typesense-dashboard-deploy.lock"
@@ -130,10 +136,13 @@ else
 fi
 
 say "Building (PUBLIC_PATH=$PUBLIC_PATH) — the live site keeps serving meanwhile"
-rm -rf dist/spa
-PUBLIC_PATH="$PUBLIC_PATH" npm run build || die "Build FAILED — aborting before the swap. Old build still serving."
-[ -f dist/spa/index.html ] || die "Build produced no dist/spa/index.html — aborting."
-ENTRY="$(grep -o 'assets/index-[^"]*\.js' dist/spa/index.html | head -1 || true)"
+# Build into a scratch folder, never into the live one: Quasar empties its output folder
+# first, and WEB_ROOT is dist/spa on this server.
+rm -rf "$BUILD_DIR"
+DIST_DIR="$BUILD_DIR" PUBLIC_PATH="$PUBLIC_PATH" npm run build \
+  || die "Build FAILED — aborting before the swap. Old build still serving."
+[ -f "$BUILD_DIR/index.html" ] || die "Build produced no $BUILD_DIR/index.html — aborting."
+ENTRY="$(grep -o 'assets/index-[^"]*\.js' "$BUILD_DIR/index.html" | head -1 || true)"
 ok "Build complete (${ENTRY:-no entry found})"
 
 # Stage the new site next to the live one. Carry the old hashed assets forward so tabs
@@ -144,7 +153,8 @@ mkdir -p "$NEW_ROOT"
 if [ -d "$WEB_ROOT/assets" ]; then
   cp -Rp "$WEB_ROOT/assets" "$NEW_ROOT/assets"
 fi
-cp -R dist/spa/. "$NEW_ROOT/"
+cp -R "$BUILD_DIR/." "$NEW_ROOT/"
+rm -rf "$BUILD_DIR"
 find "$NEW_ROOT/assets" -type f -mtime +7 -delete 2>/dev/null || true
 find "$NEW_ROOT/assets" -mindepth 1 -type d -empty -delete 2>/dev/null || true
 
