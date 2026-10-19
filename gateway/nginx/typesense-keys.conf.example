@@ -1,0 +1,12 @@
+# Install as /etc/nginx/conf.d/typesense-keys.conf (http context) on the server ONLY.
+#
+#   owner root:root, mode 640, never committed. This file is the only place the two
+#   Typesense keys live; the browser never sees either.
+#
+# The auth service answers `admin` for PIA staff and `readonly` for other ops-team users.
+
+map $ts_role $ts_api_key {
+    default   "";
+    admin     "REPLACE_WITH_ADMIN_KEY";
+    readonly  "REPLACE_WITH_READONLY_KEY";
+}

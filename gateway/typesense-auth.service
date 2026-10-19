@@ -1,0 +1,27 @@
+# /etc/systemd/system/typesense-auth.service
+#
+# PIA token check for the Typesense gateway. Listens on 127.0.0.1:9100 only.
+# The server has system Node 18 (no nvm), so plain `node` from /usr/bin is used.
+
+[Unit]
+Description=Typesense gateway auth service (PIA token check)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=ubuntu
+WorkingDirectory=/home/ubuntu/typesense-dashboard/gateway
+ExecStart=/usr/bin/node /home/ubuntu/typesense-dashboard/gateway/auth-service.js
+Environment=PIA_API_URL=https://pia.printo.in/api/v1
+Environment=PORT=9100
+Environment=CACHE_MS=60000
+Restart=always
+RestartSec=2
+# holds no secrets, so keep it boxed in
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
