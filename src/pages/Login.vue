@@ -2,7 +2,11 @@
   <div class="login-page">
     <aside class="login-hero gt-sm">
       <div class="login-hero__inner">
-        <div class="brand-tile"><q-icon name="sym_s_database_search" size="32px" /></div>
+        <div class="brand-row">
+          <div class="brand-tile"><q-icon name="sym_s_database_search" size="32px" /></div>
+          <span class="brand-row__divider"></span>
+          <span class="logo-badge"><img :src="printoLogo" alt="Printo" /></span>
+        </div>
         <h1 class="login-hero__title">Typesense Dashboard</h1>
         <p class="login-hero__lead">
           Browse collections, tune search and manage your Typesense data.
@@ -17,8 +21,10 @@
 
     <main class="login-main">
       <div class="login-card">
-        <div class="brand-tile brand-tile--small lt-md">
-          <q-icon name="sym_s_database_search" />
+        <div class="brand-row brand-row--card lt-md">
+          <div class="brand-tile brand-tile--small"><q-icon name="sym_s_database_search" /></div>
+          <span class="brand-row__divider"></span>
+          <span class="logo-badge logo-badge--small"><img :src="printoLogo" alt="Printo" /></span>
         </div>
 
         <template v-if="tab === 'pia'">
@@ -89,7 +95,7 @@
               label="API key"
             />
             <div class="row q-col-gutter-sm">
-              <div class="col-4">
+              <div class="col-5">
                 <q-select
                   v-model="state.node.protocol"
                   outlined
@@ -98,10 +104,10 @@
                   label="Protocol"
                 />
               </div>
-              <div class="col-5">
+              <div class="col-7">
                 <q-input v-model="state.node.host" outlined class="login-field" label="Host" />
               </div>
-              <div class="col-3">
+              <div class="col-5">
                 <q-input
                   v-model.number="state.node.port"
                   outlined
@@ -110,14 +116,13 @@
                   label="Port"
                 />
               </div>
+              <div class="col-7">
+                <q-input v-model="state.node.path" outlined class="login-field" label="Path" />
+              </div>
             </div>
-            <q-input
-              v-model="state.node.path"
-              outlined
-              class="login-field"
-              label="Path"
-              hint="Optional: leave blank or start with / and end without /"
-            />
+            <p class="login-hint">
+              Path is optional: leave blank, or start with / and end without /.
+            </p>
             <q-toggle
               v-if="$q.platform.is.electron && state.node.protocol === 'https'"
               v-model="state.node.tls"
@@ -197,6 +202,7 @@
 
 <script setup lang="ts">
 import ServerHistory from 'components/ServerHistory.vue';
+import printoLogo from 'assets/printo-logo.png';
 import { useNodeStore } from 'src/stores/node';
 import { piaLoginWithGoogle, piaLoginWithPassword, piaSelectGoogleAccount } from 'src/shared/pia';
 import type { PiaGoogleAccount, PiaLoginResult } from 'src/shared/pia';
@@ -414,6 +420,46 @@ function loginWithApiKey() {
   }
 }
 
+.brand-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+
+  &--card {
+    margin-bottom: 20px;
+  }
+}
+
+.brand-row__divider {
+  width: 1px;
+  height: 32px;
+  background: rgba(128, 128, 128, 0.4);
+}
+
+// the logo is purple/orange, so it sits on a white badge to stay readable on dark backgrounds
+.logo-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 14px;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+
+  img {
+    display: block;
+    height: 32px;
+    width: auto;
+  }
+
+  &--small {
+    padding: 6px 10px;
+
+    img {
+      height: 26px;
+    }
+  }
+}
+
 .brand-tile {
   width: 56px;
   height: 56px;
@@ -427,7 +473,6 @@ function loginWithApiKey() {
   &--small {
     width: 44px;
     height: 44px;
-    margin-bottom: 20px;
     border-radius: 12px;
     font-size: 24px;
   }
@@ -503,6 +548,12 @@ function loginWithApiKey() {
   border-radius: 10px;
   font-size: 15px;
   font-weight: 600;
+}
+
+.login-hint {
+  margin: -8px 0 0;
+  font-size: 12px;
+  color: #9ca3af;
 }
 
 .login-error {
