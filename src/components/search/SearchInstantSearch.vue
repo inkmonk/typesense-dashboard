@@ -164,7 +164,8 @@ const updateTypesenseAdapterConfiguration = () => {
 };
 
 watch(
-  () => currentCollection.value,
+  // a refreshed PIA token must reach the search client too
+  () => [currentCollection.value, store.piaSession?.access],
   () => {
     searchClient.value = null;
     searchClientError.value = null;
@@ -185,6 +186,15 @@ watch(
               },
             ],
             apiKey: store.loginData.apiKey,
+            // PIA sign-in: the gateway picks the Typesense key from this token. The key has to
+            // travel as a header (the search client defaults to a URL parameter) so the gateway
+            // can replace it.
+            ...(store.piaSession
+              ? {
+                  sendApiKeyAsQueryParam: false,
+                  additionalHeaders: { Authorization: `Bearer ${store.piaSession.access}` },
+                }
+              : {}),
           },
           additionalSearchParameters: {
             exhaustive_search: true,
