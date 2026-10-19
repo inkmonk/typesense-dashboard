@@ -60,7 +60,10 @@ export default defineConfig((/* ctx */) => {
         // PIA (auth) and the Typesense gateway; overridable at build time
         PIA_API_URL: process.env.PIA_API_URL ?? 'https://pia.printo.in/api/v1',
         TYPESENSE_API_URL: process.env.TYPESENSE_API_URL ?? 'https://typesense.printo.in/v1',
-        GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID ?? '',
+        // public OAuth client ID (not a secret); empty hides the Google button
+        GOOGLE_CLIENT_ID:
+          process.env.GOOGLE_CLIENT_ID ??
+          '875434468582-2a7h0gahc6sq6jm3gfmre9cca1lhh0p7.apps.googleusercontent.com',
         // keep the legacy host + API key form until the gateway is live
         ENABLE_API_KEY_LOGIN: process.env.ENABLE_API_KEY_LOGIN ?? 'true',
       },
