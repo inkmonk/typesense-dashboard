@@ -1,6 +1,6 @@
 <template>
   <q-list style="min-width: 100px">
-    <q-item v-if="props.showLogout" v-close-popup clickable @click="store.logout">
+    <q-item v-if="props.showLogout" v-close-popup clickable @click="store.signOut()">
       <q-item-section>Logout</q-item-section>
       <q-item-section avatar>
         <q-icon name="sym_s_logout" />

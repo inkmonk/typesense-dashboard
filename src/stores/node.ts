@@ -17,6 +17,8 @@ import FileSaver from 'file-saver';
 import { LocalStorage, Notify } from 'quasar';
 import { acceptHMRUpdate, defineStore } from 'pinia';
 import { Api } from 'src/shared/api';
+import { piaRefresh, piaTokenExpiresSoon, piaVerify } from 'src/shared/pia';
+import type { PiaSession } from 'src/shared/pia';
 
 export interface NodeDataInterface {
   debug: any;
@@ -59,6 +61,8 @@ export interface NodeLoginPayloadInterface extends NodeLoginDataInterface {
 
 export interface NodeStateInterface {
   loginData: NodeLoginDataInterface | null;
+  // set when signed in through PIA; the Typesense key then lives on the gateway
+  piaSession: PiaSession | null;
   loginHistory: string[];
   forceHomeRedirect: boolean;
   isConnected: boolean;
@@ -72,10 +76,27 @@ export interface NodeStateInterface {
 
 export const STORAGE_KEY_LOGIN = 'typesense-logindata';
 export const STORAGE_KEY_LOGIN_HISTORY = 'typesense-loginhistory';
+export const STORAGE_KEY_PIA_SESSION = 'typesense-pia-session';
+
+// The Typesense client requires a key; the gateway ignores it and injects the real one.
+export const PIA_PLACEHOLDER_API_KEY = 'pia-gateway';
+
+export function gatewayNodeConfig(): CustomNodeConfiguration {
+  const url = new URL(process.env.TYPESENSE_API_URL);
+  const protocol = url.protocol.replace(':', '');
+  return {
+    host: url.hostname,
+    port: Number(url.port) || (protocol === 'https' ? 443 : 80),
+    protocol,
+    path: url.pathname.replace(/\/$/, ''),
+    tls: true,
+  };
+}
 
 function state(): NodeStateInterface {
   return {
     loginData: LocalStorage.getItem(STORAGE_KEY_LOGIN),
+    piaSession: LocalStorage.getItem(STORAGE_KEY_PIA_SESSION),
     loginHistory: LocalStorage.getItem(STORAGE_KEY_LOGIN_HISTORY) || [],
     forceHomeRedirect: false,
     isConnected: false,
@@ -112,6 +133,10 @@ function state(): NodeStateInterface {
 export const useNodeStore = defineStore('node', {
   state,
   getters: {
+    // PIA users who are not staff get the read-only Typesense key from the gateway
+    isReadOnly(state): boolean {
+      return !!state.piaSession && !state.piaSession.isStaff;
+    },
     api(state): Api | void {
       if (state.loginData && state.loginData.apiKey) {
         const electron: Api | null = (window as any).electron;
@@ -123,15 +148,20 @@ export const useNodeStore = defineStore('node', {
         api.init({
           node: { ...state.loginData.node },
           apiKey: state.loginData.apiKey,
+          bearerToken: state.piaSession?.access,
         });
         return api;
       }
     },
   },
   actions: {
-    connectionCheck() {
+    async connectionCheck() {
+      if (this.piaSession && !(await this.refreshPiaSession())) {
+        this.setIsConnected(false);
+        return;
+      }
       if (this.loginData) {
-        this.api
+        await this.api
           ?.get('/metrics.json')
           ?.then(async (response: AxiosResponse) => {
             this.setData({
@@ -315,17 +345,78 @@ export const useNodeStore = defineStore('node', {
           });
         });
     },
+    /**
+     * Re-checks a PIA session against PIA: refreshes a token that is near expiry, then re-reads
+     * the roles so a deactivated user or a changed role takes effect. Returns false (and signs
+     * out) when the session is no longer valid or the user lacks ops-team access.
+     */
+    async refreshPiaSession(): Promise<boolean> {
+      let session = this.piaSession;
+      if (!session) return true;
+      try {
+        if (piaTokenExpiresSoon(session.access)) {
+          const access = await piaRefresh(session.refresh);
+          if (!access) return this.endPiaSession('Your session has expired. Please sign in again.');
+          session = { ...session, access };
+        }
+        const roles = await piaVerify(session.access);
+        if (!roles) return this.endPiaSession('Your session has expired. Please sign in again.');
+        if (!roles.isOpsTeam) {
+          return this.endPiaSession('Access denied: this dashboard is for the ops team.');
+        }
+        this.setPiaSession({ ...session, fullName: roles.fullName, isStaff: roles.isStaff });
+        return true;
+      } catch {
+        // PIA unreachable: keep the session so a retry works, but do not connect unverified
+        this.setError('Cannot reach PIA to verify your session. Please try again.');
+        return false;
+      }
+    },
+    endPiaSession(message: string): false {
+      this.logout();
+      this.setError(message);
+      return false;
+    },
+    /** Completes a PIA sign-in: verifies the roles, then connects through the gateway. */
+    async piaLogin(session: PiaSession): Promise<void> {
+      try {
+        const roles = await piaVerify(session.access);
+        if (!roles) {
+          this.setError('PIA rejected this sign-in. Please try again.');
+          return;
+        }
+        if (!roles.isOpsTeam) {
+          this.setError('Access denied: this dashboard is for the ops team.');
+          return;
+        }
+        this.setError(null);
+        this.setForceRedirect(false);
+        this.setPiaSession({ ...session, fullName: roles.fullName, isStaff: roles.isStaff });
+        this.setNodeData({ apiKey: PIA_PLACEHOLDER_API_KEY, node: gatewayNodeConfig() });
+        await this.connectionCheck();
+      } catch {
+        this.setError('Cannot reach PIA to verify your sign-in. Please try again.');
+      }
+    },
     login(loginData: NodeLoginPayloadInterface) {
       const { apiKey, node, forceHomeRedirect = false } = loginData;
+      this.setPiaSession(null);
       this.setForceRedirect(forceHomeRedirect);
       this.setNodeData({ apiKey, node });
       void this.connectionCheck();
     },
     logout() {
       LocalStorage.remove(STORAGE_KEY_LOGIN);
+      this.setPiaSession(null);
       this.setNodeData(null);
       this.setCurrentCollection(null);
       this.setIsConnected(false);
+    },
+    /** User-initiated logout: also forgets every saved server, since history holds API keys. */
+    signOut() {
+      this.logout();
+      this.loginHistory = [];
+      LocalStorage.remove(STORAGE_KEY_LOGIN_HISTORY);
     },
     loadCurrentCollection(collection: CollectionSchema | null) {
       this.setCurrentCollection(collection);
@@ -577,7 +668,19 @@ export const useNodeStore = defineStore('node', {
     /*** mutations from vuex migration ****/
     setNodeData(payload: { apiKey: string; node: CustomNodeConfiguration } | null) {
       this.loginData = payload;
-      LocalStorage.set(STORAGE_KEY_LOGIN, payload);
+      if (payload) {
+        LocalStorage.set(STORAGE_KEY_LOGIN, payload);
+      } else {
+        LocalStorage.remove(STORAGE_KEY_LOGIN);
+      }
+    },
+    setPiaSession(payload: PiaSession | null) {
+      this.piaSession = payload;
+      if (payload) {
+        LocalStorage.set(STORAGE_KEY_PIA_SESSION, payload);
+      } else {
+        LocalStorage.remove(STORAGE_KEY_PIA_SESSION);
+      }
     },
     setIsConnected(status: boolean): void {
       const route = this.router.currentRoute.value;
@@ -608,6 +711,8 @@ export const useNodeStore = defineStore('node', {
       this.isConnected = status;
     },
     saveHistory(): void {
+      // the gateway entry holds no key worth bookmarking
+      if (this.piaSession) return;
       const currentLoginDataJson = JSON.stringify(this.loginData);
       const index = this.loginHistory.indexOf(currentLoginDataJson);
       if (index === 0) return;

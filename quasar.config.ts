@@ -56,7 +56,23 @@ export default defineConfig((/* ctx */) => {
         process.env.PUBLIC_PATH ??
         (process.env.NODE_ENV === 'development' ? '/' : '/typesense-dashboard'),
       // analyze: true,
-      // env: {},
+      env: {
+        // PIA (auth) and the Typesense gateway; overridable at build time
+        PIA_API_URL: process.env.PIA_API_URL ?? 'https://pia.printo.in/api/v1',
+        // dev serves /v1 through the dev-server proxy below, because the live server's
+        // CORS preflight rejects http://localhost
+        TYPESENSE_API_URL:
+          process.env.TYPESENSE_API_URL ??
+          (process.env.NODE_ENV === 'development'
+            ? 'http://localhost:9000/v1'
+            : 'https://typesense.printo.in/v1'),
+        // public OAuth client ID (not a secret); empty hides the Google button
+        GOOGLE_CLIENT_ID:
+          process.env.GOOGLE_CLIENT_ID ??
+          '875434468582-2a7h0gahc6sq6jm3gfmre9cca1lhh0p7.apps.googleusercontent.com',
+        // keep the legacy host + API key form until the gateway is live
+        ENABLE_API_KEY_LOGIN: process.env.ENABLE_API_KEY_LOGIN ?? 'true',
+      },
       // rawDefine: {}
       // ignorePublicFolder: true,
       // minify: false,
@@ -85,6 +101,10 @@ export default defineConfig((/* ctx */) => {
     devServer: {
       // https: true,
       open: true, // opens browser window automatically
+      // same-origin /v1 for local testing against the live Typesense (no CORS involved)
+      proxy: {
+        '/v1': { target: 'https://typesense.printo.in', changeOrigin: true, secure: true },
+      },
     },
 
     // https://v2.quasar.dev/quasar-cli-vite/quasar-config-file#framework
