@@ -92,6 +92,7 @@
               outlined
               class="login-field"
               type="password"
+              autocomplete="off"
               label="API key"
             />
             <div class="row q-col-gutter-sm">
