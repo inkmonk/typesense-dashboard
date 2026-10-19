@@ -37,3 +37,10 @@ package-lock.json
 .yarnrc.yml
 # graphify
 graphify-out/
+
+# deploy + server files (never commit server env or secrets)
+.env
+.env.*
+!.env.example
+.last-deploy-commit
+server-env/
