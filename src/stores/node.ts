@@ -137,6 +137,10 @@ export const useNodeStore = defineStore('node', {
     isReadOnly(state): boolean {
       return !!state.piaSession && !state.piaSession.isStaff;
     },
+    // API-key and desktop sign-ins carry their own key, so they are treated as able to write
+    canWrite(state): boolean {
+      return !state.piaSession || state.piaSession.isStaff;
+    },
     api(state): Api | void {
       if (state.loginData && state.loginData.apiKey) {
         const electron: Api | null = (window as any).electron;

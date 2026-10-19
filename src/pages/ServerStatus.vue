@@ -81,7 +81,7 @@
             </div>
           </q-card-section>
         </q-card>
-        <q-card flat bordered class="q-mb-md">
+        <q-card v-if="store.canWrite" flat bordered class="q-mb-md">
           <q-card-section>
             <div class="text-h5 q-mb-md">Operations</div>
             <div class="text-subtitle1 q-pt-md">Cache</div>

@@ -57,6 +57,13 @@ export default defineRouter(function ({ store }) {
       nodeStore.setPreviousRoute(to);
       return { name: 'Login' };
     }
+    // Read-only users have no API Keys page and no Add Documents page.
+    if (
+      !nodeStore.canWrite &&
+      (to.path === '/apikeys' || /^\/collection\/[^/]+\/document$/.test(to.path))
+    ) {
+      return { path: '/' };
+    }
     if (to.params.name) {
       if (!nodeStore.currentCollection || nodeStore.currentCollection.name !== to.params.name) {
         // TODO check await needed?

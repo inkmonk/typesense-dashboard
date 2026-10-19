@@ -1,6 +1,6 @@
 <template>
   <q-page padding>
-    <q-list bordered class="rounded-borders">
+    <q-list v-if="store.canWrite" bordered class="rounded-borders">
       <q-expansion-item
         v-model="state.expanded"
         expand-separator
@@ -102,7 +102,7 @@
       bordered
       :filter="state.filter"
       :rows="store.data.analyticsRules"
-      :columns="state.columns"
+      :columns="withoutActions(state.columns, store.canWrite)"
       row-key="name"
       :pagination="{ rowsPerPage: 50, sortBy: 'name' }"
     >
@@ -133,6 +133,7 @@
 </template>
 
 <script setup lang="ts">
+import { withoutActions } from 'src/shared/columns';
 import { useNodeStore } from 'src/stores/node';
 import type { AnalyticsRuleSchema } from 'typesense/lib/Typesense/AnalyticsRule';
 import { computed, onMounted, reactive, ref } from 'vue';
