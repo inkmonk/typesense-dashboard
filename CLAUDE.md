@@ -12,11 +12,16 @@ npm run build               # SPA build -> dist/spa
 npm run build:desktop       # Electron build, all targets
 npm run lint                # eslint over src* (src and src-electron)
 npm run format              # prettier --write
+npx vue-tsc --noEmit        # type-check
+node --test gateway/auth-service.test.js   # the only tests: the gateway auth service
+./deploy.sh                 # on the server only, see "Production" below
 ```
 
-There is no test suite (`npm test` is a no-op). A local Typesense for manual testing lives in `typesense-test-server/docker-compose.yml`.
+There is no app test suite (`npm test` is a no-op). A local Typesense for manual testing lives in `typesense-test-server/docker-compose.yml`.
 
-For the web build, a server must be started with `--enable-cors`. Docker builds accept `PUBLIC_PATH` (must start with `/`), which `quasar.config.ts` reads for `publicPath`.
+Needs Node 18.18+ (Quasar app-vite 2, Vite 6). The default `node` on the dev Mac is v16, so `nvm use 22` first. The production server has system Node 18.19 (no nvm).
+
+`npm run dev` proxies `/v1` (Typesense) and `/pia` (PIA) to the live hosts (see `devServer.proxy` in `quasar.config.ts`), so local sign-in and API calls are same-origin and avoid CORS. Docker builds accept `PUBLIC_PATH` (must start with `/`), which `quasar.config.ts` reads for `publicPath`.
 
 ## Architecture
 
@@ -25,17 +30,39 @@ Quasar (Vue 3 + Vite, TypeScript) app that ships as both a static SPA and an Ele
 - **`src/shared/api.ts`** — the `Api` class wraps the `typesense` client plus a raw axios instance (used for endpoints the client lib lacks). It is shared code: imported by the renderer, and also by the Electron main process.
 - **Electron IPC bridge** — `src-electron/electron-main.ts` registers an `ipcMain.handle` for every method on `Api.prototype`, and `electron-preload.ts` exposes them on `window.electron` via a hard-coded `apiMethods` list. When adding a method to `Api`, add its name to that list too, or the desktop build won't expose it. Running API calls in the main process is what avoids CORS and the browser timeouts on large import/export. `importFile` and `rejectTLS` are Electron-only handlers.
 - **`src/stores/node.ts`** — the single Pinia store: login state (persisted in LocalStorage, with login history acting as server bookmarks), cached server data (collections, aliases, keys, synonyms, etc.), and the `Api` instance. It probes optional endpoints after login and records availability in `data.features`, so pages and the nav menu adapt to the server version and API key scope. Gate new server-version-dependent UI on these flags.
-- **Pages and routing** — `src/pages/*` are routed in `src/router/routes.ts` under `MainLayout`; collection-scoped pages use `collection/:name/<section>`. `src/components/NavMenu.vue` is the sidebar.
-- **Boot files** (`src/boot`, order set in `quasar.config.ts`): `instantsearch` registers vue-instantsearch, `darkmode`, and `checkAutoLoginConfig` fetches `config.json` at startup (skipped on Electron) to auto-login and seed history. The Docker image serves a mounted `/srv/config.json` for this; see `config.json.autologin` for the shape.
-- **Search UI** — `src/components/search/*` uses `typesense-instantsearch-adapter` (browser-only, so not available through the Electron IPC path) with the Monaco-based `MonacoEditor.vue` for the JSON search view.
+- **Pages and routing** — `src/pages/*` are routed in `src/router/routes.ts` under `MainLayout`; collection-scoped pages use `collection/:name/<section>`. `src/components/NavMenu.vue` is the sidebar. Web builds use history routing (clean URLs, `/dashboard/collections`); Electron (`file://`) and the Docker image (Caddy has no SPA fallback) stay on hash (`VUE_ROUTER_MODE`, set in `quasar.config.ts` / `Dockerfile`). Old `/#/...` bookmarks are rewritten on load in `src/router/index.ts`. The router guard restores a saved session before the first navigation (no login-page flash) and redirects read-only users away from `/apikeys` and `/collection/:name/document`.
+- **Boot files** (`src/boot`, order set in `quasar.config.ts`): `instantsearch` registers vue-instantsearch, `darkmode`, and `checkAutoLoginConfig` fetches `config.json` from the app base path at startup (skipped on Electron) to auto-login and seed history. The Docker image serves a mounted `/srv/config.json` for this; see `config.json.autologin` for the shape.
+- **Search UI** — `src/components/search/*` uses `typesense-instantsearch-adapter` (browser-only, so not available through the Electron IPC path) with the Monaco-based `MonacoEditor.vue` for the JSON search view. The InstantSearch client is built in `SearchInstantSearch.vue` from the saved login, so in PIA mode it must be given the Bearer token itself and told to send the key as a header (`sendApiKeyAsQueryParam: false`, otherwise it goes in the URL and the gateway cannot replace it).
 
 ## PIA login and the gateway
 
-`Login.vue` signs users in through PIA (`src/shared/pia.ts`): employee ID + password, or the official Google Identity Services button (script tag in `index.html`). Access needs `is_ops_team`; `is_staff` gets the admin Typesense key, everyone else the read-only key (`store.isReadOnly`). The PIA JWT is sent as `Authorization: Bearer`, and the dashboard sends the placeholder key `pia-gateway`. The real Typesense key is injected by an nginx gateway in front of `/v1/`. That gateway is not in this repo. Web builds show only the PIA sign-in; the host + API key form is off by default (`ENABLE_API_KEY_LOGIN=true` at build time brings the "API key" tab back). Electron and the Docker image keep it, since they connect to any server. The nginx gateway's LEGACY block (see `gateway/README.md`) still lets a bare Typesense key through `/v1/` until it is removed.
+**Sign-in.** `Login.vue` signs users in through PIA (`src/shared/pia.ts`, API at `https://pia.printo.in/api/v1`): employee ID + password, or the official Google Identity Services button (script tag in `index.html`). The PIA JWT is kept in LocalStorage (`typesense-pia-session`), sent as `Authorization: Bearer`, re-verified and refreshed in `store.refreshPiaSession` on every connect. The dashboard sends the placeholder key `pia-gateway`; the real Typesense key is added by nginx.
 
-PIA is called through the same host in web builds (`/pia/` in nginx, and the dev-server proxy), because PIA's CORS preflight sends two `Access-Control-Allow-Origin` values and browsers reject that; Electron calls `https://pia.printo.in/api/v1` directly.
+**Roles** (from PIA `token-verify`): `is_ops_team` is required to get in; `is_staff` gets the admin Typesense key, other ops users the read-only key. `store.canWrite` is false only for PIA users who are not staff (API-key and desktop sign-ins count as able to write: the dashboard cannot see what a pasted key allows). Read-only users do not see the API Keys / Add Document pages, add/edit forms, Edit/Delete buttons, schema editor or the Operations card; Typesense still enforces the read-only key, the hiding only removes controls that cannot work.
 
-Build-time env (see `quasar.config.ts`): `PIA_API_URL`, `TYPESENSE_API_URL`, `GOOGLE_CLIENT_ID` (defaults to the Printo client; empty hides the Google button; never add a client secret, this flow doesn't use one), `ENABLE_API_KEY_LOGIN`. Production serves from `/dashboard` (`PUBLIC_PATH`); the old `/typesense-dashboard/` URL redirects there in nginx.
+**Gateway** (`gateway/`, live on typesense.printo.in): `auth-service.js` (dependency-free Node, `127.0.0.1:9177`, systemd unit `typesense-auth`) is called by nginx `auth_request` for every `/v1/` request that carries a token; it checks the token with PIA (cached 60s) and answers 200 + `X-Role: admin|readonly`, 401, 403, or 503 (PIA down, fails closed). The two Typesense keys live only in `/etc/nginx/conf.d/typesense-keys.conf` on the server (root-only, never in git). Port 9100 is taken by Prometheus node_exporter, hence 9177. `gateway/README.md` has the rollout and rollback steps.
+
+**LEGACY path, still open.** Web builds hide the "API key" tab by default, but the nginx `LEGACY` block is still there: requests with no `Authorization` header skip the gateway and keep using the `x-typesense-api-key` they send (scripts, anyone holding a Typesense key). So hiding the tab is cosmetic; anyone with a key still bypasses PIA. Closing it = delete the `LEGACY` blocks in the nginx file, then rotate the old admin key (`gateway/README.md` step 7).
+
+**PIA is called through the same host** in web builds (`/pia/` in nginx, and the dev-server proxy), because PIA's CORS preflight sends two `Access-Control-Allow-Origin` values and browsers reject that. Electron calls PIA directly.
+
+Build-time env (see `quasar.config.ts`; `.env.deploy` on the server can set them): `PIA_API_URL`, `TYPESENSE_API_URL`, `GOOGLE_CLIENT_ID` (defaults to the Printo client; empty hides the Google button; never add a client secret, this flow doesn't use one), `ENABLE_API_KEY_LOGIN` (the "API key" tab: off by default for web builds, on for Electron and the Docker image, which connect to any server; `ENABLE_API_KEY_LOGIN=true` in `.env.deploy` brings it back for one deploy). Production serves from `/dashboard` (`PUBLIC_PATH`); the old `/typesense-dashboard/` URL redirects there in nginx.
+
+## Production (typesense.printo.in)
+
+- **Server:** one Ubuntu EC2 box, user `ubuntu`, repo checkout at `~/typesense-dashboard` (remote `inkmonk/typesense-dashboard`, branch `main`). nginx serves the built site from `dist/spa` at `/dashboard/`, proxies `/v1/` to Typesense (`127.0.0.1:8108`; Typesense listens on all interfaces, but the AWS firewall blocks 8108 from outside, checked once) and `/pia/` to PIA. The live site file is `/etc/nginx/sites-enabled/typesense.printo.in`; its source is `gateway/nginx/typesense.printo.in.conf` (`deploy/nginx/...` is the dashboard-paths-only version without the gateway). Never leave `*.backup` files in `sites-enabled`: nginx loads them too.
+- **Deploy:** `cd ~/typesense-dashboard && git pull --ff-only origin main && ./deploy.sh`. It refuses a dirty tree or a branch other than `main`, builds into `dist/spa-build` (Quasar empties its output folder, and `dist/spa` is live), swaps it into `dist/spa` keeping `dist/spa.prev`, and checks that the public URL serves the new entry script. `./deploy.sh rollback` swaps the previous build back. Optional per-server build options go in the git-ignored `.env.deploy` (copy `.env.deploy.example`); don't edit tracked files on the server.
+- **Don't name a file `.env`:** Quasar loads it into the public bundle.
+
+## Working here
+
+- **This is a fork** (`inkmonk/typesense-dashboard` of `bfritscher/typesense-dashboard`). `gh pr create` defaults to the upstream author's repo: always pass `--repo inkmonk/typesense-dashboard --base main --head <branch>`.
+- Branch from `main`, one PR per change; merge only when the user says so. Don't delete branches without asking.
+- Upstream is far ahead (at v2.5.0: Quasar app-vite 3, Typesense v30 features, a large `stores/node.ts` refactor), so a merge conflicts in `Login.vue` and elsewhere. Treat syncing it as its own project.
+
+## Not done yet
+
+Close the LEGACY path and rotate the old admin key (above); check the read-only view with a real non-staff ops account.
 
 ## Conventions
 
