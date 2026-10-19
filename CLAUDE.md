@@ -29,6 +29,12 @@ Quasar (Vue 3 + Vite, TypeScript) app that ships as both a static SPA and an Ele
 - **Boot files** (`src/boot`, order set in `quasar.config.ts`): `instantsearch` registers vue-instantsearch, `darkmode`, and `checkAutoLoginConfig` fetches `config.json` at startup (skipped on Electron) to auto-login and seed history. The Docker image serves a mounted `/srv/config.json` for this; see `config.json.autologin` for the shape.
 - **Search UI** — `src/components/search/*` uses `typesense-instantsearch-adapter` (browser-only, so not available through the Electron IPC path) with the Monaco-based `MonacoEditor.vue` for the JSON search view.
 
+## PIA login and the gateway
+
+`Login.vue` signs users in through PIA (`src/shared/pia.ts`): employee ID + password, or the official Google Identity Services button (script tag in `index.html`). Access needs `is_ops_team`; `is_staff` gets the admin Typesense key, everyone else the read-only key (`store.isReadOnly`). The PIA JWT is sent as `Authorization: Bearer`, and the dashboard sends the placeholder key `pia-gateway`. The real Typesense key is injected by an nginx gateway in front of `/v1/`. That gateway is not in this repo. Until it ships, the legacy host + API key form stays on the "API key" tab (`ENABLE_API_KEY_LOGIN=false` at build time removes it).
+
+Build-time env (see `quasar.config.ts`): `PIA_API_URL`, `TYPESENSE_API_URL`, `GOOGLE_CLIENT_ID` (empty hides the Google button), `ENABLE_API_KEY_LOGIN`. Production serves from `/typesense-dashboard` (`PUBLIC_PATH`).
+
 ## Conventions
 
 Prettier config in `.prettierrc.json` (single quotes, semicolons, print width 100). Not yet implemented upstream: create snapshot, delete by query, scoped search key generation.

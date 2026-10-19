@@ -19,10 +19,22 @@ export class Api {
   public axiosClient?: AxiosInstance;
   private typesenseClient?: Typesense.Client;
 
-  public init({ node, apiKey }: { node: NodeConfiguration; apiKey: string }): void {
+  public init({
+    node,
+    apiKey,
+    bearerToken,
+  }: {
+    node: NodeConfiguration;
+    apiKey: string;
+    // PIA access token; the gateway swaps in the real Typesense key for the user's role
+    bearerToken?: string | undefined;
+  }): void {
+    const authHeaders: Record<string, string> = bearerToken
+      ? { Authorization: `Bearer ${bearerToken}` }
+      : {};
     this.axiosClient = axios.create({
       baseURL: `${node.protocol}://${node.host}:${node.port}${node.path || ''}`,
-      headers: { 'x-typesense-api-key': apiKey },
+      headers: { 'x-typesense-api-key': apiKey, ...authHeaders },
     });
     this.typesenseClient = new Typesense.Client({
       nodes: [
@@ -31,6 +43,7 @@ export class Api {
         },
       ],
       apiKey,
+      additionalHeaders: authHeaders,
       //connection_timeout_seconds: 3600,
     });
   }

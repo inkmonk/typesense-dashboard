@@ -56,7 +56,14 @@ export default defineConfig((/* ctx */) => {
         process.env.PUBLIC_PATH ??
         (process.env.NODE_ENV === 'development' ? '/' : '/typesense-dashboard'),
       // analyze: true,
-      // env: {},
+      env: {
+        // PIA (auth) and the Typesense gateway; overridable at build time
+        PIA_API_URL: process.env.PIA_API_URL ?? 'https://pia.printo.in/api/v1',
+        TYPESENSE_API_URL: process.env.TYPESENSE_API_URL ?? 'https://typesense.printo.in/v1',
+        GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID ?? '',
+        // keep the legacy host + API key form until the gateway is live
+        ENABLE_API_KEY_LOGIN: process.env.ENABLE_API_KEY_LOGIN ?? 'true',
+      },
       // rawDefine: {}
       // ignorePublicFolder: true,
       // minify: false,

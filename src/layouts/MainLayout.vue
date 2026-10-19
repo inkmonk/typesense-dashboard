@@ -13,8 +13,11 @@
 
         <q-toolbar-title> Typesense Dashboard </q-toolbar-title>
 
+        <q-chip v-if="store.isReadOnly" dense color="orange" text-color="white" icon="sym_s_lock">
+          Read-only
+        </q-chip>
         <q-btn padding="xs md" flat dense no-caps>
-          {{ store.loginData?.node.host }}
+          {{ store.piaSession?.fullName || store.loginData?.node.host }}
           <q-icon right name="sym_s_switch_account" />
           <q-menu>
             <server-history :show-logout="true"></server-history>
