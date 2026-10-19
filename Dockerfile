@@ -1,4 +1,4 @@
-ARG PUBLIC_PATH=/typesense-dashboard
+ARG PUBLIC_PATH=/dashboard
 FROM node:22-alpine AS builder
 ARG PUBLIC_PATH
 WORKDIR /app
