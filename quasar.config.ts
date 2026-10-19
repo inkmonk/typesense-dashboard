@@ -57,14 +57,18 @@ export default defineConfig((ctx) => {
 
       // publicPath: '/',
       publicPath:
-        process.env.PUBLIC_PATH ??
-        (process.env.NODE_ENV === 'development' ? '/' : '/dashboard'),
+        process.env.PUBLIC_PATH ?? (process.env.NODE_ENV === 'development' ? '/' : '/dashboard'),
       // deploy.sh builds into a scratch folder (DIST_DIR) so the live site keeps serving
       ...(process.env.DIST_DIR ? { distDir: process.env.DIST_DIR } : {}),
       // analyze: true,
       env: {
         // PIA (auth) and the Typesense gateway; overridable at build time
-        PIA_API_URL: process.env.PIA_API_URL ?? 'https://pia.printo.in/api/v1',
+        // Web builds call PIA through the same host (/pia/ in nginx, and the dev proxy below):
+        // PIA's CORS preflight carries two Access-Control-Allow-Origin values, which browsers
+        // reject. Electron has no page origin to protect, so it calls PIA directly.
+        PIA_API_URL:
+          process.env.PIA_API_URL ??
+          ('electron' in ctx.mode ? 'https://pia.printo.in/api/v1' : '/pia/api/v1'),
         // dev serves /v1 through the dev-server proxy below, because the live server's
         // CORS preflight rejects http://localhost
         TYPESENSE_API_URL:
@@ -110,6 +114,12 @@ export default defineConfig((ctx) => {
       // same-origin /v1 for local testing against the live Typesense (no CORS involved)
       proxy: {
         '/v1': { target: 'https://typesense.printo.in', changeOrigin: true, secure: true },
+        '/pia': {
+          target: 'https://pia.printo.in',
+          changeOrigin: true,
+          secure: true,
+          rewrite: (path: string) => path.replace(/^\/pia/, ''),
+        },
       },
     },
 
