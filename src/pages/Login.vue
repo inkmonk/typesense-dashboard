@@ -203,7 +203,7 @@
 <script setup lang="ts">
 import ServerHistory from 'components/ServerHistory.vue';
 import printoLogo from 'assets/printo-logo.png';
-import { useNodeStore } from 'src/stores/node';
+import { gatewayNodeConfig, useNodeStore } from 'src/stores/node';
 import { piaLoginWithGoogle, piaLoginWithPassword, piaSelectGoogleAccount } from 'src/shared/pia';
 import type { PiaGoogleAccount, PiaLoginResult } from 'src/shared/pia';
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
@@ -252,13 +252,8 @@ const pickerOptions = computed(() =>
 
 const state = ref({
   apiKey: '',
-  node: {
-    host: 'typesense.printo.in',
-    port: 443,
-    protocol: 'https',
-    path: '/v1/',
-    tls: true,
-  },
+  // same server the PIA sign-in uses; localhost:9000/v1 (the dev proxy) when developing
+  node: gatewayNodeConfig(),
   protocolOptions: ['http', 'https'],
 });
 
