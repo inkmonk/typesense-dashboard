@@ -15,6 +15,12 @@ cd ~/typesense-dashboard && git pull --ff-only origin main && ./deploy.sh
 
 It ends with `Deploy verified.` in green. If the site misbehaves: `./deploy.sh rollback`.
 
+### Changing what a deploy builds
+
+Copy `deploy.env.example` to `deploy.env` on the server and remove the leading `#` from the
+lines you want, for example `ENABLE_API_KEY_LOGIN=true` to bring the API key tab back. `deploy.env`
+is ignored by git, so editing it never blocks a deploy. Put the `#` back to undo.
+
 ## One-time: switch nginx to the /dashboard/ paths
 
 Do this once, after pulling, and **before** the first deploy of a build that uses `/dashboard/`.
