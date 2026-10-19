@@ -587,6 +587,16 @@ function loginWithApiKey() {
 }
 
 @media (max-width: 1023px) {
+  .brand-row--card {
+    justify-content: center;
+  }
+
+  .login-card__title,
+  .login-card__sub,
+  .login-hint {
+    text-align: center;
+  }
+
   .login-page {
     background: #fff;
   }
