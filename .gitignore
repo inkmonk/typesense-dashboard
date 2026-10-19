@@ -35,3 +35,5 @@ yarn.lock
 package-lock.json
 .yarn
 .yarnrc.yml
+# graphify
+graphify-out/
