@@ -24,6 +24,14 @@ export default defineRouter(function ({ store }) {
       ? createWebHistory
       : createWebHashHistory;
 
+  // Bookmarks from the hash-mode days (/dashboard/#/collections) open as /dashboard/collections.
+  if (!process.env.SERVER && process.env.VUE_ROUTER_MODE === 'history') {
+    const base = (process.env.VUE_ROUTER_BASE ?? '/').replace(/\/$/, '');
+    if (window.location.hash.startsWith('#/')) {
+      window.history.replaceState(null, '', base + window.location.hash.slice(1));
+    }
+  }
+
   const Router = createRouter({
     scrollBehavior: () => ({ left: 0, top: 0 }),
     routes,

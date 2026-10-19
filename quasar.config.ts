@@ -3,7 +3,7 @@
 
 import { defineConfig } from '#q-app/wrappers';
 
-export default defineConfig((/* ctx */) => {
+export default defineConfig((ctx) => {
   return {
     // https://v2.quasar.dev/quasar-cli-vite/prefetch-feature
     // preFetch: true,
@@ -44,7 +44,11 @@ export default defineConfig((/* ctx */) => {
         // extendTsConfig (tsConfig) {}
       },
 
-      vueRouterMode: 'hash', // available values: 'hash', 'history'
+      // Web build: clean URLs (/dashboard/collections). Electron loads from file://, which needs
+      // hash. The Docker image (Caddy file-server has no SPA fallback) sets VUE_ROUTER_MODE=hash.
+      vueRouterMode:
+        (process.env.VUE_ROUTER_MODE as 'hash' | 'history' | undefined) ??
+        ('electron' in ctx.mode ? 'hash' : 'history'),
       // vueRouterBase,
       // vueDevtools,
       // vueOptionsAPI: false,
