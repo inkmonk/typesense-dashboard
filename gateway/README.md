@@ -4,7 +4,7 @@ Lets the dashboard sign in through PIA and keeps both Typesense keys on the serv
 
 ```
 Browser ──Authorization: Bearer <PIA JWT>──▶ nginx /v1/
-                                              │ auth_request ─▶ auth-service (127.0.0.1:9100) ─▶ PIA token-verify
+                                              │ auth_request ─▶ auth-service (127.0.0.1:9177) ─▶ PIA token-verify
                                               │   200 + X-Role: admin | readonly   (cached ~60s)
                                               │   401 bad token · 403 not ops team · 500 PIA down
                                               ▼
@@ -50,8 +50,8 @@ cd ~/typesense-dashboard && node --test gateway/auth-service.test.js
 ```bash
 sudo cp ~/typesense-dashboard/gateway/typesense-auth.service /etc/systemd/system/
 sudo systemctl daemon-reload && sudo systemctl enable --now typesense-auth
-curl -s localhost:9100/health; echo        # ok
-curl -s -o /dev/null -w '%{http_code}\n' localhost:9100/auth        # 401 (no token)
+curl -s localhost:9177/health; echo        # typesense-auth ok
+curl -s -o /dev/null -w '%{http_code}\n' localhost:9177/auth        # 401 (no token)
 ```
 
 If `which node` printed a different path, fix `ExecStart` in the unit first.

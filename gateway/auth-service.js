@@ -75,7 +75,7 @@ export function createAuthService({
 
   return http.createServer(async (req, res) => {
     if (req.url === '/health') {
-      res.writeHead(200, { 'Content-Type': 'text/plain' }).end('ok');
+      res.writeHead(200, { 'Content-Type': 'text/plain' }).end('typesense-auth ok');
       return;
     }
     if (req.url !== '/auth') {
@@ -95,7 +95,8 @@ export function createAuthService({
 
 // Run directly: node auth-service.js
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
-  const port = Number(process.env.PORT ?? 9100);
+  // 9100 is taken by Prometheus node_exporter on the server, so this uses an unusual port
+  const port = Number(process.env.PORT ?? 9177);
   const piaApiUrl = (process.env.PIA_API_URL ?? 'https://pia.printo.in/api/v1').replace(/\/$/, '');
   const server = createAuthService({
     piaApiUrl,
