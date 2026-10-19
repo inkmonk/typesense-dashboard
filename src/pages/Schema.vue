@@ -5,11 +5,24 @@
         <q-icon size="md" name="sym_s_data_object" /> Schema for
         {{ store.currentCollection?.name }}
       </div>
-      <q-btn unelevated color="negative" @click="drop(store.currentCollection?.name || '')"
+      <q-btn
+        v-if="store.canWrite"
+        unelevated
+        color="negative"
+        @click="drop(store.currentCollection?.name || '')"
         >Drop Collection</q-btn
       >
     </div>
-    <collection-ui :initial-schema="schema" primary-action-label="Update Schema" @submit="update" />
+    <collection-ui
+      v-if="store.canWrite"
+      :initial-schema="schema"
+      primary-action-label="Update Schema"
+      @submit="update"
+    />
+    <q-card v-else flat bordered class="q-pa-md">
+      <div class="text-caption q-mb-sm">Read-only access: the schema is shown as JSON.</div>
+      <pre class="q-ma-none" style="overflow: auto">{{ JSON.stringify(schema, null, 2) }}</pre>
+    </q-card>
   </q-page>
 </template>
 

@@ -1,6 +1,7 @@
 <template>
   <q-page padding>
     <q-expansion-item
+      v-if="store.canWrite"
       v-model="state.expanded"
       expand-separator
       icon="sym_s_add_circle"
@@ -40,7 +41,7 @@
       bordered
       :filter="state.filter"
       :rows="store.data.aliases"
-      :columns="state.columns"
+      :columns="withoutActions(state.columns, store.canWrite)"
       row-key="name"
       :visible-columns="['name', 'collection_name', 'actions']"
       :pagination="{ rowsPerPage: 50, sortBy: 'name' }"
@@ -72,6 +73,7 @@
 </template>
 
 <script setup lang="ts">
+import { withoutActions } from 'src/shared/columns';
 import { computed, reactive } from 'vue';
 import { useNodeStore } from 'src/stores/node';
 import { useQuasar } from 'quasar';

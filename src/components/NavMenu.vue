@@ -26,7 +26,14 @@
       <q-item-section> Aliases </q-item-section>
     </q-item>
 
-    <q-item v-ripple clickable to="/apikeys" exact :disable="!store.data.features.apiKeys">
+    <q-item
+      v-if="store.canWrite"
+      v-ripple
+      clickable
+      to="/apikeys"
+      exact
+      :disable="!store.data.features.apiKeys"
+    >
       <q-item-section avatar>
         <q-icon name="sym_s_key" />
       </q-item-section>
@@ -149,6 +156,7 @@
     </q-item>
 
     <q-item
+      v-if="store.canWrite"
       v-ripple
       clickable
       :to="`/collection/${currentCollection?.name}/document`"

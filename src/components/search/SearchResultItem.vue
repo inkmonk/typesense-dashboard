@@ -7,8 +7,8 @@
       :embed-fields="embedFields"
     />
     <q-space />
-    <q-separator></q-separator>
-    <q-item>
+    <q-separator v-if="store.canWrite"></q-separator>
+    <q-item v-if="store.canWrite">
       <q-item-section>
         <q-item-label>
           <q-btn

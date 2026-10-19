@@ -1,6 +1,7 @@
 <template>
   <q-page padding>
     <q-expansion-item
+      v-if="store.canWrite"
       v-model="state.expanded"
       expand-separator
       icon="sym_s_add_circle"
@@ -56,7 +57,7 @@
       bordered
       :filter="state.filter"
       :rows="store.data.searchPresets"
-      :columns="state.columns"
+      :columns="withoutActions(state.columns, store.canWrite)"
       row-key="id"
     >
       <template #top-left>
@@ -86,6 +87,7 @@
 </template>
 
 <script setup lang="ts">
+import { withoutActions } from 'src/shared/columns';
 import { useNodeStore } from 'src/stores/node';
 import { computed, onMounted, reactive } from 'vue';
 import { useQuasar } from 'quasar';

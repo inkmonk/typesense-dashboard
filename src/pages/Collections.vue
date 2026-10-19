@@ -1,6 +1,6 @@
 <template>
   <q-page padding>
-    <collection-create></collection-create>
+    <collection-create v-if="store.canWrite"></collection-create>
     <q-table
       :filter="state.filter"
       :columns="state.columns"
@@ -23,7 +23,12 @@
           <q-td key="actions" :props="props">
             <q-btn flat round icon="sym_s_more_vert">
               <q-menu>
-                <q-item dense clickable :to="`/collection/${props.row.name}/document`">
+                <q-item
+                  v-if="store.canWrite"
+                  dense
+                  clickable
+                  :to="`/collection/${props.row.name}/document`"
+                >
                   <q-item-section>Import</q-item-section>
                   <q-item-section avatar>
                     <q-avatar icon="sym_s_file_upload" />
@@ -35,19 +40,36 @@
                     <q-avatar icon="sym_s_file_download" />
                   </q-item-section>
                 </q-item>
-                <q-item dense clickable :to="`/collection/${props.row.name}/schema`">
+                <q-item
+                  v-if="store.canWrite"
+                  dense
+                  clickable
+                  :to="`/collection/${props.row.name}/schema`"
+                >
                   <q-item-section>Edit</q-item-section>
                   <q-item-section avatar>
                     <q-avatar icon="sym_s_data_object" />
                   </q-item-section>
                 </q-item>
-                <q-item dense clickable @click="cloneCollection(props.row.name)">
+                <q-item
+                  v-if="store.canWrite"
+                  dense
+                  clickable
+                  @click="cloneCollection(props.row.name)"
+                >
                   <q-item-section>Clone Schema</q-item-section>
                   <q-item-section avatar>
                     <q-avatar icon="sym_s_content_copy" />
                   </q-item-section>
                 </q-item>
-                <q-item dense clickable flat style="color: #de3b39" @click="drop(props.row.name)">
+                <q-item
+                  v-if="store.canWrite"
+                  dense
+                  clickable
+                  flat
+                  style="color: #de3b39"
+                  @click="drop(props.row.name)"
+                >
                   <q-item-section>Delete</q-item-section>
                   <q-item-section avatar>
                     <q-avatar icon="sym_s_delete" />
