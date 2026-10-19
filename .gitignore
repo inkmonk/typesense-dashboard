@@ -42,5 +42,6 @@ graphify-out/
 .env
 .env.*
 !.env.example
+!.env.deploy.example
 .last-deploy-commit
 server-env/

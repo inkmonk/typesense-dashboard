@@ -16,6 +16,7 @@ set -euo pipefail
 # Defaults match the typesense.printo.in server, where nginx has
 #   location /dashboard/ { alias /home/ubuntu/typesense-dashboard/dist/spa/; }
 # Override with environment variables if that changes:
+#   (set them in .env.deploy, see .env.deploy.example, or as environment variables)
 #   WEB_ROOT     directory nginx serves at /dashboard/ (the alias target)
 #   VERIFY_URL   public URL used for the post-deploy check
 
@@ -30,6 +31,16 @@ EXPECTED_BRANCH="${EXPECTED_BRANCH:-main}"
 PUBLIC_PATH="${PUBLIC_PATH:-/dashboard}"
 
 REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+# Optional per-server settings, kept out of git so editing them never blocks a deploy.
+# Copy .env.deploy.example to .env.deploy and uncomment what you need.
+if [ -f "$REPO_DIR/.env.deploy" ]; then
+  set -a
+  # shellcheck disable=SC1091
+  . "$REPO_DIR/.env.deploy"
+  set +a
+  say "Loaded .env.deploy"
+fi
 WEB_ROOT="${WEB_ROOT:-$REPO_DIR/dist/spa}"
 BUILD_DIR="dist/spa-build"
 LAST_DEPLOY_FILE="$REPO_DIR/.last-deploy-commit"
