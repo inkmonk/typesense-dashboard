@@ -2,7 +2,8 @@
 
 The dashboard is static files that nginx serves at `https://typesense.printo.in/dashboard/`.
 `deploy.sh` (repo root) builds the site and swaps it in. `deploy/nginx/typesense.printo.in.conf`
-is the nginx site file for these paths.
+is the nginx site file for these paths. It also forwards `/pia/` to PIA, which is how the
+sign-in page reaches PIA without a cross-origin call.
 
 ## Every deploy
 
