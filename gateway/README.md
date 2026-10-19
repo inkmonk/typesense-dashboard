@@ -4,7 +4,7 @@ Lets the dashboard sign in through PIA and keeps both Typesense keys on the serv
 
 ```
 Browser ──Authorization: Bearer <PIA JWT>──▶ nginx /v1/
-                                              │ auth_request ─▶ auth-service (127.0.0.1:9100) ─▶ PIA token-verify
+                                              │ auth_request ─▶ auth-service (127.0.0.1:9177) ─▶ PIA token-verify
                                               │   200 + X-Role: admin | readonly   (cached ~60s)
                                               │   401 bad token · 403 not ops team · 500 PIA down
                                               ▼
@@ -50,15 +50,16 @@ cd ~/typesense-dashboard && node --test gateway/auth-service.test.js
 ```bash
 sudo cp ~/typesense-dashboard/gateway/typesense-auth.service /etc/systemd/system/
 sudo systemctl daemon-reload && sudo systemctl enable --now typesense-auth
-curl -s localhost:9100/health; echo        # ok
-curl -s -o /dev/null -w '%{http_code}\n' localhost:9100/auth        # 401 (no token)
+curl -s localhost:9177/health; echo        # typesense-auth ok
+curl -s -o /dev/null -w '%{http_code}\n' localhost:9177/auth        # 401 (no token)
 ```
 
 If `which node` printed a different path, fix `ExecStart` in the unit first.
 
 **3. Create the read-only Typesense key.** The admin key is read from the server's own config and
-is not printed. Check the action names against the Typesense docs for your version; the dashboard
-pages that need an action you left out will show errors.
+is not printed. The action names follow the Typesense docs (`resource:verb`, checked against the
+28.0 API-keys page; `presets:*` is not listed there but follows the same pattern). The dashboard pages that
+need an action left out will show errors.
 
 ```bash
 ADMIN=$(sudo awk -F'[ =]+' '/^api-key/ {print $2}' /etc/typesense/typesense-server.ini)
@@ -68,7 +69,7 @@ curl -s -X POST http://127.0.0.1:8108/keys \
     "collections:list","collections:get","documents:search","documents:get","documents:export",
     "aliases:list","aliases:get","synonyms:list","synonyms:get","overrides:list","overrides:get",
     "stopwords:list","stopwords:get","presets:list","presets:get","analytics/rules:list",
-    "metrics.json:list","stats.json:list"]}'
+    "metrics.json:list","stats.json:list","debug:list"]}'
 ```
 
 The response shows the new key **once** in its `value` field. Copy it somewhere safe now.
