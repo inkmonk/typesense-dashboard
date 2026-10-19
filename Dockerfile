@@ -13,6 +13,8 @@ RUN npm install --ignore-scripts
 
 COPY . .
 
+# Caddy's file-server has no SPA fallback, so the image keeps hash URLs (/#/collections)
+ENV VUE_ROUTER_MODE=hash
 RUN quasar prepare
 RUN quasar build
 

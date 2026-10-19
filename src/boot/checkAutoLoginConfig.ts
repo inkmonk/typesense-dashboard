@@ -8,7 +8,8 @@ export default defineBoot(({ store }) => {
   if (Platform.is.electron) {
     return;
   }
-  void axios.get('config.json').then((response) => {
+  // absolute: in history mode a relative URL would resolve against the current page path
+  void axios.get(`${process.env.VUE_ROUTER_BASE ?? '/'}config.json`).then((response) => {
     const nodeStore = useNodeStore(store);
     if (response.data && response.data.apiKey) {
       nodeStore.login(response.data);
