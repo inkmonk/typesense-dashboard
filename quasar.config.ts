@@ -80,8 +80,10 @@ export default defineConfig((ctx) => {
         GOOGLE_CLIENT_ID:
           process.env.GOOGLE_CLIENT_ID ??
           '875434468582-2a7h0gahc6sq6jm3gfmre9cca1lhh0p7.apps.googleusercontent.com',
-        // keep the legacy host + API key form until the gateway is live
-        ENABLE_API_KEY_LOGIN: process.env.ENABLE_API_KEY_LOGIN ?? 'true',
+        // Web builds sign in through PIA only. Electron (any server) and the Docker image keep the
+        // host + API key form. Set ENABLE_API_KEY_LOGIN=true for one build to bring the tab back.
+        ENABLE_API_KEY_LOGIN:
+          process.env.ENABLE_API_KEY_LOGIN ?? ('electron' in ctx.mode ? 'true' : 'false'),
       },
       // rawDefine: {}
       // ignorePublicFolder: true,

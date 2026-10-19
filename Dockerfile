@@ -15,6 +15,8 @@ COPY . .
 
 # Caddy's file-server has no SPA fallback, so the image keeps hash URLs (/#/collections)
 ENV VUE_ROUTER_MODE=hash
+# The self-hosted image connects to any server, so it keeps the host + API key form
+ENV ENABLE_API_KEY_LOGIN=true
 RUN quasar prepare
 RUN quasar build
 

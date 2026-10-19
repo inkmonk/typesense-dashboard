@@ -119,7 +119,7 @@ on the dashboard through the PIA tab and look at collections, search and the ser
 
 **7. Close the legacy path** once everyone uses PIA: delete the `if ($http_authorization = "")`
 block and the `location /_ts_legacy/` block, `nginx -t`, reload, then rebuild the dashboard with
-`ENABLE_API_KEY_LOGIN=false`. Rotate the admin key afterwards if it was ever shared in clear text.
+`ENABLE_API_KEY_LOGIN=false` (the web build default now hides the tab already). Rotate the admin key afterwards if it was ever shared in clear text.
 
 ## Checks worth doing once
 
