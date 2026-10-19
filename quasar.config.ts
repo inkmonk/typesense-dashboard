@@ -54,7 +54,7 @@ export default defineConfig((/* ctx */) => {
       // publicPath: '/',
       publicPath:
         process.env.PUBLIC_PATH ??
-        (process.env.NODE_ENV === 'development' ? '/' : '/typesense-dashboard'),
+        (process.env.NODE_ENV === 'development' ? '/' : '/dashboard'),
       // deploy.sh builds into a scratch folder (DIST_DIR) so the live site keeps serving
       ...(process.env.DIST_DIR ? { distDir: process.env.DIST_DIR } : {}),
       // analyze: true,

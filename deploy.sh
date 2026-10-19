@@ -10,13 +10,13 @@ set -euo pipefail
 #   ./deploy.sh            pull main + build + swap into WEB_ROOT + verify
 #   ./deploy.sh rollback   swap the previous build back (no rebuild)
 #
-# The dashboard is a static SPA. nginx serves WEB_ROOT at /typesense-dashboard/, so a
+# The dashboard is a static SPA. nginx serves WEB_ROOT at /dashboard/, so a
 # deploy is a directory swap: no restart and no nginx reload.
 #
 # Defaults match the typesense.printo.in server, where nginx has
-#   location /typesense-dashboard/ { alias /home/ubuntu/typesense-dashboard/dist/spa/; }
+#   location /dashboard/ { alias /home/ubuntu/typesense-dashboard/dist/spa/; }
 # Override with environment variables if that changes:
-#   WEB_ROOT     directory nginx serves at /typesense-dashboard/ (the alias target)
+#   WEB_ROOT     directory nginx serves at /dashboard/ (the alias target)
 #   VERIFY_URL   public URL used for the post-deploy check
 
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
@@ -25,9 +25,9 @@ ok()   { echo -e "${GREEN}✓${NC} $1"; }
 warn() { echo -e "${YELLOW}!${NC} $1"; }
 die()  { echo -e "${RED}✗${NC} $1"; exit 1; }
 
-VERIFY_URL="${VERIFY_URL:-https://typesense.printo.in/typesense-dashboard/}"
+VERIFY_URL="${VERIFY_URL:-https://typesense.printo.in/dashboard/}"
 EXPECTED_BRANCH="${EXPECTED_BRANCH:-main}"
-PUBLIC_PATH="${PUBLIC_PATH:-/typesense-dashboard}"
+PUBLIC_PATH="${PUBLIC_PATH:-/dashboard}"
 
 REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
 WEB_ROOT="${WEB_ROOT:-$REPO_DIR/dist/spa}"
@@ -35,7 +35,7 @@ BUILD_DIR="dist/spa-build"
 LAST_DEPLOY_FILE="$REPO_DIR/.last-deploy-commit"
 MODE="${1:-deploy}"
 
-[ -d "$WEB_ROOT" ] || die "WEB_ROOT '$WEB_ROOT' does not exist. Set WEB_ROOT to nginx's alias target for /typesense-dashboard/."
+[ -d "$WEB_ROOT" ] || die "WEB_ROOT '$WEB_ROOT' does not exist. Set WEB_ROOT to nginx's alias target for /dashboard/."
 PREV_ROOT="${WEB_ROOT}.prev"
 NEW_ROOT="${WEB_ROOT}.new"
 

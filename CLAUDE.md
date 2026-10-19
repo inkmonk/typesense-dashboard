@@ -33,7 +33,7 @@ Quasar (Vue 3 + Vite, TypeScript) app that ships as both a static SPA and an Ele
 
 `Login.vue` signs users in through PIA (`src/shared/pia.ts`): employee ID + password, or the official Google Identity Services button (script tag in `index.html`). Access needs `is_ops_team`; `is_staff` gets the admin Typesense key, everyone else the read-only key (`store.isReadOnly`). The PIA JWT is sent as `Authorization: Bearer`, and the dashboard sends the placeholder key `pia-gateway`. The real Typesense key is injected by an nginx gateway in front of `/v1/`. That gateway is not in this repo. Until it ships, the legacy host + API key form stays on the "API key" tab (`ENABLE_API_KEY_LOGIN=false` at build time removes it).
 
-Build-time env (see `quasar.config.ts`): `PIA_API_URL`, `TYPESENSE_API_URL`, `GOOGLE_CLIENT_ID` (defaults to the Printo client; empty hides the Google button; never add a client secret, this flow doesn't use one), `ENABLE_API_KEY_LOGIN`. Production serves from `/typesense-dashboard` (`PUBLIC_PATH`).
+Build-time env (see `quasar.config.ts`): `PIA_API_URL`, `TYPESENSE_API_URL`, `GOOGLE_CLIENT_ID` (defaults to the Printo client; empty hides the Google button; never add a client secret, this flow doesn't use one), `ENABLE_API_KEY_LOGIN`. Production serves from `/dashboard` (`PUBLIC_PATH`); the old `/typesense-dashboard/` URL redirects there in nginx.
 
 ## Conventions
 
