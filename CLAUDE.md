@@ -60,6 +60,14 @@ Build-time env (see `quasar.config.ts`; `.env.deploy` on the server can set them
 - Branch from `main`, one PR per change; merge only when the user says so. Don't delete branches without asking.
 - Upstream is far ahead (at v2.5.0: Quasar app-vite 3, Typesense v30 features, a large `stores/node.ts` refactor), so a merge conflicts in `Login.vue` and elsewhere. Treat syncing it as its own project.
 
+## Knowledge graph
+
+`graphify-out/` holds a knowledge graph of this repo (code via AST, plus the docs and screenshots): `GRAPH_REPORT.md` (most-connected nodes, communities, suggested questions), `graph.json` and an interactive `graph.html`. It is git-ignored and regenerable, so never commit it.
+
+- Before reading many files, query it: `graphify query "what calls refreshPiaSession"`, `graphify explain "Api"`, `graphify path "Login.vue" "Api"`.
+- It goes stale as the code changes. Rebuild with `/graphify` (full) or `/graphify --update` (changed files only) after larger changes, and do not trust it over the code if they disagree.
+- The last health check reported dangling edges (probably imports of external packages, not confirmed), so treat edge counts as approximate.
+
 ## Not done yet
 
 Close the LEGACY path and rotate the old admin key (above); check the read-only view with a real non-staff ops account.
