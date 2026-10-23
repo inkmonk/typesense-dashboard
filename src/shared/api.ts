@@ -4,16 +4,25 @@ import * as Typesense from 'typesense';
 import type { CollectionAliasSchema } from 'typesense/lib/Typesense/Aliases';
 import type { CollectionCreateSchema } from 'typesense/lib/Typesense/Collections';
 import type { CollectionUpdateSchema } from 'typesense/lib/Typesense/Collection';
-import type { NodeConfiguration } from 'typesense/lib/Typesense/Configuration';
+import type {
+  ConfigurationOptions,
+  NodeConfiguration,
+} from 'typesense/lib/Typesense/Configuration';
 import type { SearchParams } from 'typesense/lib/Typesense/Documents';
 import type { KeyCreateSchema } from 'typesense/lib/Typesense/Key';
-import type { OverrideSchema } from 'typesense/lib/Typesense/Override';
+import type { OverrideCreateSchema } from 'typesense/lib/Typesense/Overrides';
 import type { SynonymSchema } from 'typesense/lib/Typesense/Synonym';
 import type { PresetCreateSchema } from 'typesense/lib/Typesense/Presets';
-import type { AnalyticsRuleCreateSchema } from 'typesense/lib/Typesense/AnalyticsRule';
-import type AnalyticsRule from 'typesense/lib/Typesense/AnalyticsRule';
-import type AnalyticsRules from 'typesense/lib/Typesense/AnalyticsRules';
 import type { StopwordCreateSchema } from 'typesense/lib/Typesense/Stopwords';
+import type { AnalyticsRuleUpsertSchema } from 'typesense/lib/Typesense/AnalyticsRule';
+import type {
+  SynonymItemSchema,
+  SynonymSetCreateSchema,
+} from 'typesense/lib/Typesense/SynonymSets';
+import type {
+  CurationObjectSchema,
+  CurationSetUpsertSchema,
+} from 'typesense/lib/Typesense/CurationSets';
 
 export class Api {
   public axiosClient?: AxiosInstance;
@@ -22,10 +31,12 @@ export class Api {
   public init({
     node,
     apiKey,
+    connectionTimeoutSeconds,
     bearerToken,
   }: {
     node: NodeConfiguration;
     apiKey: string;
+    connectionTimeoutSeconds?: number;
     // PIA access token; the gateway swaps in the real Typesense key for the user's role
     bearerToken?: string | undefined;
   }): void {
@@ -36,16 +47,15 @@ export class Api {
       baseURL: `${node.protocol}://${node.host}:${node.port}${node.path || ''}`,
       headers: { 'x-typesense-api-key': apiKey, ...authHeaders },
     });
-    this.typesenseClient = new Typesense.Client({
-      nodes: [
-        {
-          ...node,
-        },
-      ],
+    const clientConfig: ConfigurationOptions = {
+      nodes: [{ ...node }],
       apiKey,
       additionalHeaders: authHeaders,
-      //connection_timeout_seconds: 3600,
-    });
+    };
+    if (connectionTimeoutSeconds !== undefined) {
+      clientConfig.connectionTimeoutSeconds = connectionTimeoutSeconds;
+    }
+    this.typesenseClient = new Typesense.Client(clientConfig);
   }
 
   public getDebug() {
@@ -104,19 +114,19 @@ export class Api {
     return this.typesenseClient?.analytics.rules().retrieve();
   }
 
-  public upsertAnalyticsRule(name: string, rule: AnalyticsRuleCreateSchema) {
-    return (this.typesenseClient?.analytics.rules() as AnalyticsRules).upsert(name, rule);
+  public upsertAnalyticsRule(name: string, rule: AnalyticsRuleUpsertSchema) {
+    return this.typesenseClient?.analytics.rules().upsert(name, rule);
   }
 
   public deleteAnalyticsRule(name: string) {
-    return (this.typesenseClient?.analytics.rules(name) as AnalyticsRule).delete();
+    return this.typesenseClient?.analytics.rules(name).delete();
   }
 
   public getSearchPresets() {
     return this.typesenseClient?.presets().retrieve();
   }
 
-  public upsertSearchPreset(name: string, preset: PresetCreateSchema) {
+  public upsertSearchPreset(name: string, preset: PresetCreateSchema<any, any>) {
     return this.typesenseClient?.presets().upsert(name, preset);
   }
 
@@ -136,6 +146,18 @@ export class Api {
     return this.typesenseClient?.stopwords(id).delete();
   }
 
+  public getStemmingDictionaries() {
+    return this.typesenseClient?.stemming.dictionaries().retrieve();
+  }
+
+  public upsertStemmingDictionaries(id: string, wordRootCombinations: string | any[]) {
+    return this.typesenseClient?.stemming.dictionaries().upsert(id, wordRootCombinations);
+  }
+
+  public getStemmingDictionary(id: string) {
+    return this.typesenseClient?.stemming.dictionaries(id).retrieve();
+  }
+
   public getSynonyms(collectionName: string) {
     return this.typesenseClient?.collections(collectionName).synonyms().retrieve();
   }
@@ -152,7 +174,7 @@ export class Api {
     return this.typesenseClient?.collections(collectionName).overrides().retrieve();
   }
 
-  public upsertOverride(collectionName: string, id: string, override: OverrideSchema) {
+  public upsertOverride(collectionName: string, id: string, override: OverrideCreateSchema) {
     return this.typesenseClient?.collections(collectionName).overrides().upsert(id, override);
   }
 
@@ -178,7 +200,7 @@ export class Api {
     return this.typesenseClient?.collections(collectionName).documents().export();
   }
 
-  public search(collectionName: string, searchParameters: SearchParams) {
+  public search(collectionName: string, searchParameters: SearchParams<any>) {
     return this.typesenseClient?.collections(collectionName).documents().search(searchParameters);
   }
 
@@ -202,5 +224,74 @@ export class Api {
       .catch((err) => {
         throw Error(err.response?.data?.message || err.message);
       });
+  }
+
+  public delete(url: string): Promise<any> | void {
+    return this.axiosClient
+      ?.delete(url)
+      .then((r) => {
+        return { data: r.data };
+      })
+      .catch((err) => {
+        throw Error(err.response?.data?.message || err.message);
+      });
+  }
+
+  // V30: Synonym Sets API
+  public getSynonymSets() {
+    return this.typesenseClient?.synonymSets().retrieve();
+  }
+
+  public getSynonymSet(name: string) {
+    return this.typesenseClient?.synonymSets(name).retrieve();
+  }
+
+  public upsertSynonymSet(name: string, data: SynonymSetCreateSchema) {
+    return this.typesenseClient?.synonymSets(name).upsert(data);
+  }
+
+  public upsertSynonymSetItem(
+    setName: string,
+    itemId: string,
+    item: Omit<SynonymItemSchema, 'id'>,
+  ) {
+    return this.typesenseClient?.synonymSets(setName).items().upsert(itemId, item);
+  }
+
+  public deleteSynonymSetItem(setName: string, itemId: string) {
+    return this.typesenseClient?.synonymSets(setName).items(itemId).delete();
+  }
+
+  public deleteSynonymSet(name: string) {
+    return this.typesenseClient?.synonymSets(name).delete();
+  }
+
+  // V30: Curation Sets API
+  public getCurationSets() {
+    return this.typesenseClient?.curationSets().retrieve();
+  }
+
+  public getCurationSet(name: string) {
+    return this.typesenseClient?.curationSets(name).retrieve();
+  }
+
+  public upsertCurationSet(name: string, data: CurationSetUpsertSchema) {
+    return this.typesenseClient?.curationSets(name).upsert(data);
+  }
+
+  public upsertCurationSetItem(setName: string, item: CurationObjectSchema) {
+    return this.typesenseClient?.curationSets(setName).items(item.id).upsert(item);
+  }
+
+  public deleteCurationSetItem(setName: string, itemId: string) {
+    return this.typesenseClient?.curationSets(setName).items(itemId).delete();
+  }
+
+  public deleteCurationSet(name: string) {
+    return this.typesenseClient?.curationSets(name).delete();
+  }
+
+  public createSnapshot(snapshotPath: string) {
+    return this.typesenseClient?.operations.perform('snapshot', { snapshot_path: snapshotPath });
   }
 }

@@ -45,3 +45,4 @@ graphify-out/
 !.env.deploy.example
 .last-deploy-commit
 server-env/
+tsconfig.tsbuildinfo

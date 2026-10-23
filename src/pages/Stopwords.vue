@@ -71,7 +71,6 @@
 
     <q-table
       class="q-mt-md"
-      title="Search Presets"
       flat
       bordered
       wrap-cells
@@ -117,8 +116,8 @@
 </template>
 
 <script setup lang="ts">
-import { withoutActions } from 'src/shared/columns';
-import { useNodeStore } from 'src/stores/node';
+import { withoutActions } from '@/shared/columns';
+import { useNodeStore } from '@/stores/node';
 import { computed, onMounted, reactive } from 'vue';
 import { useQuasar } from 'quasar';
 import type { StopwordSchema } from 'typesense/lib/Typesense/Stopword';

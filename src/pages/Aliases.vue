@@ -73,9 +73,9 @@
 </template>
 
 <script setup lang="ts">
-import { withoutActions } from 'src/shared/columns';
-import { computed, reactive } from 'vue';
-import { useNodeStore } from 'src/stores/node';
+import { withoutActions } from '@/shared/columns';
+import { computed, onMounted, reactive } from 'vue';
+import { useNodeStore } from '@/stores/node';
 import { useQuasar } from 'quasar';
 import type { CollectionAliasSchema } from 'typesense/lib/Typesense/Aliases';
 import type { QTableProps } from 'quasar';
@@ -139,4 +139,8 @@ function deleteAlias(name: string) {
     void store.deleteAlias(name);
   });
 }
+
+onMounted(() => {
+  void store.getAliases();
+});
 </script>

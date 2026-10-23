@@ -1,15 +1,15 @@
 ARG PUBLIC_PATH=/dashboard
-FROM node:22-alpine AS builder
+FROM node:24-alpine AS builder
 ARG PUBLIC_PATH
 WORKDIR /app
 
 RUN apk add --no-cache --virtual .gyp \
         g++ make py3-pip
 
-RUN npm install -g @quasar/cli
-
 COPY package.json package-lock.json ./
-RUN npm install --ignore-scripts
+COPY src-electron/package.json src-electron/package-lock.json ./src-electron/
+RUN npm ci --ignore-scripts
+RUN npm ci --prefix src-electron --ignore-scripts
 
 COPY . .
 
@@ -17,15 +17,15 @@ COPY . .
 ENV VUE_ROUTER_MODE=hash
 # The self-hosted image connects to any server, so it keeps the host + API key form
 ENV ENABLE_API_KEY_LOGIN=true
-RUN quasar prepare
-RUN quasar build
-
-RUN apk del .gyp
+RUN npm run postinstall
+RUN npm run build
 
 FROM caddy:2-alpine
 ARG PUBLIC_PATH
 WORKDIR /srv
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 COPY --from=builder /app/dist/spa/ .${PUBLIC_PATH}
 
 EXPOSE 80
-CMD ["caddy", "file-server"]
+CMD ["/entrypoint.sh"]

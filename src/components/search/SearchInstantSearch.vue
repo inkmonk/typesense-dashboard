@@ -6,8 +6,8 @@
     :middlewares="middlewares"
   >
     <ais-configure :hits-per-page.camel="12" />
-    <ais-search-box index-name="instant_search" :search-client="searchClient">
-      <debounced-search-box />
+    <ais-search-box v-slot="{ currentRefinement, refine }">
+      <debounced-search-box :model-value="currentRefinement" @refine="refine" />
     </ais-search-box>
     <ais-stats></ais-stats>
     <ais-current-refinements />
@@ -39,6 +39,18 @@
           @update:model-value="updateTypesenseAdapterConfiguration()"
         ></q-select>
 
+        <div class="text-subtitle2 q-pt-md">Max Candidates</div>
+        <q-input
+          v-model.number="maxCandidates"
+          type="number"
+          outlined
+          dense
+          :min="0"
+          :max="10000"
+          hint="Number of similar words for prefix and typo searching"
+          @update:model-value="updateTypesenseAdapterConfiguration()"
+        ></q-input>
+
         <div v-for="name in facetNumberFields" :key="name" class="q-mb-sm">
           <div class="text-subtitle2 q-pt-md">{{ name }}</div>
           <ais-range-input :searchable="true" :attribute="name" />
@@ -48,12 +60,20 @@
           <div class="text-subtitle2 q-pt-md">{{ name }}</div>
           <ais-refinement-list class="q-mb-sm" :searchable="true" :attribute="name" />
         </div>
+
+        <div v-for="name in facetBooleanFields" :key="name" class="q-mb-sm">
+          <div class="text-subtitle2 q-pt-md">{{ name }}</div>
+          <ais-refinement-list class="q-mb-sm" :attribute="name" />
+        </div>
       </div>
       <div class="col-9">
         <ais-pagination class="q-mb-md" />
         <ais-hits>
           <template v-if="currentCollection" #item="{ item }">
-            <search-result-item :item="item"></search-result-item>
+            <search-result-item
+              :item="item"
+              @deleted="instantSearchInstance.refresh()"
+            ></search-result-item>
           </template>
         </ais-hits>
         <ais-pagination class="q-my-md" />
@@ -69,11 +89,12 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
-import { useNodeStore } from 'src/stores/node';
-import SearchResultItem from 'src/components/search/SearchResultItem.vue';
-import DebouncedSearchBox from 'src/components/search/DebouncedSearchBox.vue';
+import { useNodeStore } from '@/stores/node';
+import SearchResultItem from '@/components/search/SearchResultItem.vue';
+import DebouncedSearchBox from '@/components/search/DebouncedSearchBox.vue';
 import TypesenseInstantSearchAdapter from 'typesense-instantsearch-adapter';
 import type { CollectionSchema } from 'typesense/lib/Typesense/Collection';
+import type { ConfigurationOptions } from 'typesense/lib/Typesense/Configuration';
 
 const store = useNodeStore();
 const searchClient = ref<any>(null);
@@ -81,6 +102,7 @@ const typesenseInstantsearchAdapter = ref<TypesenseInstantSearchAdapter>();
 const instantSearchInstance = ref<any>();
 const searchClientError = ref<string | null>(null);
 const currentStopwordsSet = ref(null);
+const maxCandidates = ref(4);
 
 const middlewares = [
   ({ instantSearchInstance: instance }: any) => {
@@ -115,6 +137,13 @@ const facetStringFields = computed((): string[] => {
   if (!currentCollection.value || !currentCollection.value.fields) return [];
   return currentCollection.value.fields
     .filter((f) => f.facet && ['string', 'string[]'].includes(f.type) && !f.name.includes('.*'))
+    .map((f) => f.name);
+});
+
+const facetBooleanFields = computed((): string[] => {
+  if (!currentCollection.value || !currentCollection.value.fields) return [];
+  return currentCollection.value.fields
+    .filter((f) => f.facet && ['bool', 'bool[]'].includes(f.type) && !f.name.includes('.*'))
     .map((f) => f.name);
 });
 
@@ -158,6 +187,7 @@ const updateTypesenseAdapterConfiguration = () => {
         // @ts-expect-error internal property
         ...typesenseInstantsearchAdapter.value.configuration.additionalSearchParameters,
         stopwords: currentStopwordsSet.value,
+        max_candidates: maxCandidates.value,
       },
     });
   }
@@ -178,26 +208,26 @@ watch(
         .join(',');
 
       try {
+        const serverConfig: ConfigurationOptions = {
+          nodes: [{ ...store.loginData.node }],
+          apiKey: store.loginData.apiKey,
+          // PIA sign-in: the gateway picks the Typesense key from this token. The key has to
+          // travel as a header (the search client defaults to a URL parameter) so the gateway
+          // can replace it.
+          ...(store.piaSession
+            ? {
+                sendApiKeyAsQueryParam: false,
+                additionalHeaders: { Authorization: `Bearer ${store.piaSession.access}` },
+              }
+            : {}),
+        };
+        if (store.loginData.connectionTimeoutSeconds !== undefined) {
+          serverConfig.connectionTimeoutSeconds = store.loginData.connectionTimeoutSeconds;
+        }
         const adapter = new TypesenseInstantSearchAdapter({
-          server: {
-            nodes: [
-              {
-                ...store.loginData.node,
-              },
-            ],
-            apiKey: store.loginData.apiKey,
-            // PIA sign-in: the gateway picks the Typesense key from this token. The key has to
-            // travel as a header (the search client defaults to a URL parameter) so the gateway
-            // can replace it.
-            ...(store.piaSession
-              ? {
-                  sendApiKeyAsQueryParam: false,
-                  additionalHeaders: { Authorization: `Bearer ${store.piaSession.access}` },
-                }
-              : {}),
-          },
+          server: serverConfig,
           additionalSearchParameters: {
-            exhaustive_search: true,
+            max_candidates: maxCandidates.value,
             query_by,
           },
         });

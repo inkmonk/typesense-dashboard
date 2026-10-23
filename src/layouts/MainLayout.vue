@@ -17,7 +17,10 @@
           Read-only
         </q-chip>
         <q-btn padding="xs md" flat dense no-caps>
-          {{ store.piaSession?.fullName || store.loginData?.node.host }}
+          {{
+            store.piaSession?.fullName ||
+            `${store.loginData?.node.host}:${store.loginData?.node.port}`
+          }}
           <q-icon right name="sym_s_switch_account" />
           <q-menu>
             <server-history :show-logout="true"></server-history>
@@ -57,9 +60,9 @@
 </template>
 
 <script setup lang="ts">
-import NavMenu from 'components/NavMenu.vue';
-import ServerHistory from 'components/ServerHistory.vue';
-import { useNodeStore } from 'src/stores/node';
+import NavMenu from '@/components/NavMenu.vue';
+import ServerHistory from '@/components/ServerHistory.vue';
+import { useNodeStore } from '@/stores/node';
 import { ref } from 'vue';
 
 const store = useNodeStore();

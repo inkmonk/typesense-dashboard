@@ -1,4 +1,4 @@
-import { defineRouter } from '#q-app/wrappers';
+import { defineRouter } from '#q-app';
 import {
   createMemoryHistory,
   createRouter,
@@ -6,7 +6,7 @@ import {
   createWebHistory,
 } from 'vue-router';
 import routes from './routes';
-import { useNodeStore } from 'src/stores/node';
+import { useNodeStore } from '@/stores/node';
 
 /*
  * If not building with SSR mode, you can
@@ -18,15 +18,15 @@ import { useNodeStore } from 'src/stores/node';
  */
 
 export default defineRouter(function ({ store }) {
-  const createHistory = process.env.SERVER
+  const createHistory = import.meta.env.QUASAR_SERVER
     ? createMemoryHistory
-    : process.env.VUE_ROUTER_MODE === 'history'
+    : import.meta.env.QUASAR_VUE_ROUTER_MODE === 'history'
       ? createWebHistory
       : createWebHashHistory;
 
   // Bookmarks from the hash-mode days (/dashboard/#/collections) open as /dashboard/collections.
-  if (!process.env.SERVER && process.env.VUE_ROUTER_MODE === 'history') {
-    const base = (process.env.VUE_ROUTER_BASE ?? '/').replace(/\/$/, '');
+  if (!import.meta.env.QUASAR_SERVER && import.meta.env.QUASAR_VUE_ROUTER_MODE === 'history') {
+    const base = (import.meta.env.QUASAR_VUE_ROUTER_BASE ?? '/').replace(/\/$/, '');
     if (window.location.hash.startsWith('#/')) {
       window.history.replaceState(null, '', base + window.location.hash.slice(1));
     }
@@ -39,7 +39,7 @@ export default defineRouter(function ({ store }) {
     // Leave this as is and make changes in quasar.conf.js instead!
     // quasar.conf.js -> build -> vueRouterMode
     // quasar.conf.js -> build -> publicPath
-    history: createHistory(process.env.VUE_ROUTER_BASE),
+    history: createHistory(import.meta.env.QUASAR_VUE_ROUTER_BASE),
   });
 
   // A saved session is re-checked once on startup, before the first navigation resolves, so a
@@ -67,7 +67,7 @@ export default defineRouter(function ({ store }) {
     if (to.params.name) {
       if (!nodeStore.currentCollection || nodeStore.currentCollection.name !== to.params.name) {
         // TODO check await needed?
-        nodeStore.loadCurrentCollectionByName(to.params.name as string);
+        void nodeStore.loadCurrentCollectionByName(to.params.name as string);
       }
     }
     return true;

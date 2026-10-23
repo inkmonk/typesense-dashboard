@@ -1,24 +1,40 @@
-import type { AxiosError, AxiosResponse } from 'axios';
+import type { AxiosResponse } from 'axios';
 import type { CollectionSchema, CollectionUpdateSchema } from 'typesense/lib/Typesense/Collection';
 import type { CollectionAliasSchema } from 'typesense/lib/Typesense/Aliases';
 import type { KeySchema } from 'typesense/lib/Typesense/Key';
 import type { SynonymSchema } from 'typesense/lib/Typesense/Synonym';
 import type { SynonymCreateSchema } from 'typesense/lib/Typesense/Synonyms';
 import type { OverrideSchema } from 'typesense/lib/Typesense/Override';
+import type { OverrideCreateSchema } from 'typesense/lib/Typesense/Overrides';
 import type { SearchParams } from 'typesense/lib/Typesense/Documents';
 import type { DebugResponseSchema } from 'typesense/lib/Typesense/Debug';
-import type { AnalyticsRuleSchema } from 'typesense/lib/Typesense/AnalyticsRule';
+import type {
+  AnalyticsRuleCreateSchema,
+  AnalyticsRuleSchema,
+} from 'typesense/lib/Typesense/AnalyticsRule';
 import type { PresetSchema } from 'typesense/lib/Typesense/Preset';
 import type { StopwordSchema } from 'typesense/lib/Typesense/Stopword';
+import type { StemmingDictionariesRetrieveSchema } from 'typesense/lib/Typesense/StemmingDictionaries';
+import type { StemmingDictionarySchema } from 'typesense/lib/Typesense/StemmingDictionary';
 import type { NodeConfiguration } from 'typesense/lib/Typesense/Configuration';
+import type {
+  CurationObjectSchema,
+  CurationSetsListEntrySchema,
+} from 'typesense/lib/Typesense/CurationSets';
+import type { SynonymSetSchema } from 'typesense/lib/Typesense/SynonymSets';
 import type { RouteLocationNormalized } from 'vue-router';
 
 import FileSaver from 'file-saver';
 import { LocalStorage, Notify } from 'quasar';
 import { acceptHMRUpdate, defineStore } from 'pinia';
-import { Api } from 'src/shared/api';
-import { piaRefresh, piaTokenExpiresSoon, piaVerify } from 'src/shared/pia';
-import type { PiaSession } from 'src/shared/pia';
+import { Api } from '@/shared/api';
+import { piaRefresh, piaTokenExpiresSoon, piaVerify } from '@/shared/pia';
+import type { PiaSession } from '@/shared/pia';
+
+export interface Health {
+  ok: boolean;
+  resource_error?: string;
+}
 
 export interface NodeDataInterface {
   debug: any;
@@ -26,23 +42,30 @@ export interface NodeDataInterface {
   metrics: any;
 
   stats: any;
+
+  health: Health | undefined;
   collections: CollectionSchema[];
   aliases: CollectionAliasSchema[];
   apiKeys: KeySchema[];
   analyticsRules: AnalyticsRuleSchema[];
-  searchPresets: PresetSchema[];
+  searchPresets: PresetSchema<any>[];
   stopwords: StopwordSchema[];
-  overrides: OverrideSchema[];
-  synonyms: SynonymSchema[];
+  stemmingDictionaries: string[];
+  overrides: OverrideRow[];
+  synonyms: SynonymRow[];
   defaultDocVersion: string;
   features: {
     stopwords: boolean;
+    stemmingDictionaries: boolean;
     analyticsRules: boolean;
     searchPresets: boolean;
     stats: boolean;
     aliases: boolean;
     apiKeys: boolean;
     debug: boolean;
+    health: boolean;
+    synonymSets: boolean;
+    curationSets: boolean;
   };
 }
 
@@ -53,16 +76,23 @@ export interface CustomNodeConfiguration extends NodeConfiguration {
 export interface NodeLoginDataInterface {
   node: CustomNodeConfiguration;
   apiKey: string;
+  clusterTag?: string;
+  connectionTimeoutSeconds?: number;
 }
 
 export interface NodeLoginPayloadInterface extends NodeLoginDataInterface {
   forceHomeRedirect?: boolean;
 }
 
+export interface UIConfigInterface {
+  hideProjectInfo?: boolean;
+}
+
 export interface NodeStateInterface {
   loginData: NodeLoginDataInterface | null;
   // set when signed in through PIA; the Typesense key then lives on the gateway
   piaSession: PiaSession | null;
+  currentNodeConfig: CustomNodeConfiguration;
   loginHistory: string[];
   forceHomeRedirect: boolean;
   isConnected: boolean;
@@ -70,9 +100,18 @@ export interface NodeStateInterface {
   error: string | null;
   data: NodeDataInterface;
   currentCollection: CollectionSchema | null;
+  uiConfig: UIConfigInterface;
 
   documentsToEdit: any[] | null;
 }
+
+export type SynonymRow = SynonymSchema & {
+  _setName?: string;
+};
+
+export type OverrideRow = OverrideSchema & {
+  _setName?: string;
+};
 
 export const STORAGE_KEY_LOGIN = 'typesense-logindata';
 export const STORAGE_KEY_LOGIN_HISTORY = 'typesense-loginhistory';
@@ -82,7 +121,7 @@ export const STORAGE_KEY_PIA_SESSION = 'typesense-pia-session';
 export const PIA_PLACEHOLDER_API_KEY = 'pia-gateway';
 
 export function gatewayNodeConfig(): CustomNodeConfiguration {
-  const url = new URL(process.env.TYPESENSE_API_URL);
+  const url = new URL(import.meta.env.TYPESENSE_API_URL);
   const protocol = url.protocol.replace(':', '');
   return {
     host: url.hostname,
@@ -93,10 +132,39 @@ export function gatewayNodeConfig(): CustomNodeConfiguration {
   };
 }
 
+function isValidMetricsPayload(payload: unknown): payload is Record<string, unknown> {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return false;
+  const keys = Object.keys(payload);
+  if (keys.length === 0) return false;
+  // Typesense metrics generally contain system_* and/or typesense_* keys.
+  return keys.some((k) => k.startsWith('system_') || k.startsWith('typesense_'));
+}
+
+function isValidCollectionsPayload(payload: unknown): payload is CollectionSchema[] {
+  if (!Array.isArray(payload)) return false;
+  // Collections are objects; require at least a name to avoid treating junk as success.
+  return payload.every(
+    (c) =>
+      c &&
+      typeof c === 'object' &&
+      !Array.isArray(c) &&
+      typeof (c as Record<string, unknown>).name === 'string',
+  );
+}
+
 function state(): NodeStateInterface {
+  const storedLoginDataRaw = LocalStorage.getItem(STORAGE_KEY_LOGIN);
+  const storedLoginData: NodeLoginDataInterface | null =
+    storedLoginDataRaw && typeof storedLoginDataRaw === 'object'
+      ? (storedLoginDataRaw as NodeLoginDataInterface)
+      : null;
+  // The API-key form starts on the Printo gateway (same server the PIA sign-in uses); upstream
+  // defaults to localhost:8108.
+  const defaultNodeConfig: CustomNodeConfiguration = gatewayNodeConfig();
   return {
-    loginData: LocalStorage.getItem(STORAGE_KEY_LOGIN),
+    loginData: storedLoginData,
     piaSession: LocalStorage.getItem(STORAGE_KEY_PIA_SESSION),
+    currentNodeConfig: (storedLoginData?.node as CustomNodeConfiguration) || defaultNodeConfig,
     loginHistory: LocalStorage.getItem(STORAGE_KEY_LOGIN_HISTORY) || [],
     forceHomeRedirect: false,
     isConnected: false,
@@ -104,27 +172,36 @@ function state(): NodeStateInterface {
     error: null,
     currentCollection: null,
     documentsToEdit: [],
+    uiConfig: {
+      hideProjectInfo: false,
+    },
     data: {
       debug: {},
       metrics: {},
       stats: {},
+      health: undefined,
       collections: [],
       aliases: [],
       apiKeys: [],
       analyticsRules: [],
       searchPresets: [],
       stopwords: [],
+      stemmingDictionaries: [],
       overrides: [],
       synonyms: [],
       defaultDocVersion: '28.0',
       features: {
         stopwords: false,
+        stemmingDictionaries: false,
         analyticsRules: false,
         searchPresets: false,
         stats: false,
         aliases: false,
         apiKeys: false,
         debug: false,
+        health: false,
+        synonymSets: false,
+        curationSets: false,
       },
     },
   };
@@ -141,6 +218,15 @@ export const useNodeStore = defineStore('node', {
     canWrite(state): boolean {
       return !state.piaSession || state.piaSession.isStaff;
     },
+    typesenseMajorVersion(): number {
+      const version = this.data.debug?.version;
+      if (!version || typeof version !== 'string') return 0;
+      const major = parseInt(version.split('.')[0] ?? '0', 10);
+      return Number.isNaN(major) ? 0 : major;
+    },
+    supportsCurationRuleTags(): boolean {
+      return this.typesenseMajorVersion >= 26;
+    },
     api(state): Api | void {
       if (state.loginData && state.loginData.apiKey) {
         const electron: Api | null = (window as any).electron;
@@ -149,13 +235,57 @@ export const useNodeStore = defineStore('node', {
           api = electron;
           (electron as any).rejectTLS(Number(state.loginData.node.tls));
         }
-        api.init({
+        const initConfig: Parameters<typeof api.init>[0] = {
           node: { ...state.loginData.node },
           apiKey: state.loginData.apiKey,
           bearerToken: state.piaSession?.access,
-        });
+        };
+        if (state.loginData.connectionTimeoutSeconds !== undefined) {
+          initConfig.connectionTimeoutSeconds = state.loginData.connectionTimeoutSeconds;
+        }
+        api.init(initConfig);
         return api;
       }
+    },
+    loginHistoryParsed(state): NodeLoginDataInterface[] {
+      const parsed: NodeLoginDataInterface[] = [];
+      for (const raw of state.loginHistory) {
+        if (typeof raw !== 'string') continue;
+        try {
+          const item = JSON.parse(raw) as NodeLoginDataInterface;
+          if (item && item.node && item.apiKey) parsed.push(item);
+        } catch {
+          /* ignore malformed */
+        }
+      }
+      return parsed;
+    },
+    currentHistoryEntry(): NodeLoginDataInterface | null {
+      if (!this.loginData) return null;
+      const baseKey = JSON.stringify({ node: this.loginData.node, apiKey: this.loginData.apiKey });
+      for (const item of this.loginHistoryParsed) {
+        const key = JSON.stringify({ node: item.node, apiKey: item.apiKey });
+        if (key === baseKey) return item;
+      }
+      return null;
+    },
+    currentClusterTag(): string | null {
+      return this.currentHistoryEntry?.clusterTag || null;
+    },
+    clusterMembersForCurrent(): NodeLoginDataInterface[] {
+      const tag = this.currentClusterTag;
+      if (!tag) return [];
+      return this.loginHistoryParsed
+        .filter((h) => h.clusterTag === tag)
+        .slice()
+        .sort((a, b) => {
+          const h = a.node.host.localeCompare(b.node.host);
+          if (h !== 0) return h;
+          const pa = Number(a.node.port || 0);
+          const pb = Number(b.node.port || 0);
+          if (pa !== pb) return pa - pb;
+          return String(a.node.protocol).localeCompare(String(b.node.protocol));
+        });
     },
   },
   actions: {
@@ -164,59 +294,95 @@ export const useNodeStore = defineStore('node', {
         this.setIsConnected(false);
         return;
       }
-      if (this.loginData) {
-        await this.api
-          ?.get('/metrics.json')
-          ?.then(async (response: AxiosResponse) => {
-            this.setData({
-              metrics: response.data,
-            });
-            // minimal required data to consider the connection as successful
-            await this.getCollections();
-            // optional features depending on the apiKey and server capabilities
-            [
-              'getAliases',
-              'getSearchPresets',
-              'getAnalyticsRules',
-              'getStopwords',
-              'getApiKeys',
-              'getDebug',
-            ].forEach((funcName) => {
-              const key = (funcName[3]?.toLowerCase() +
-                funcName.slice(4)) as keyof NodeDataInterface['features'];
-              const func = (this as any)[funcName];
-              func()
-                .then(() => {
-                  this.setFeature({
-                    key,
-                    value: true,
-                  });
-                })
-                .catch(() => {
-                  this.setFeature({
-                    key,
-                    value: false,
-                  });
-                });
-            });
-            this.setIsConnected(true);
-            this.saveHistory();
-            this.setError(null);
-          })
-          .catch((error: AxiosError) => {
-            this.setIsConnected(false);
-            this.setError(error.message);
-          });
-      } else {
+      if (!this.loginData) {
         this.setIsConnected(false);
+        return;
+      }
+
+      // Metrics are optional; only store them when valid.
+      try {
+        const response = await this.api?.get('/metrics.json');
+        if (response && isValidMetricsPayload(response.data)) {
+          this.setData({ metrics: response.data });
+        } else {
+          this.setData({ metrics: {} });
+        }
+      } catch {
+        this.setData({ metrics: {} });
+      }
+
+      try {
+        // Minimal required data to consider the connection successful.
+        const collections = await this.api?.getCollections();
+        if (!isValidCollectionsPayload(collections)) {
+          throw new Error('Invalid collections response');
+        }
+        this.setData({ collections });
+
+        // Optional features depending on the apiKey and server capabilities
+        [
+          'getAliases',
+          'getSearchPresets',
+          'getAnalyticsRules',
+          'getStopwords',
+          'getStemmingDictionaries',
+          'getApiKeys',
+          'getDebug',
+          'getSynonymSets',
+          'getCurationSets',
+        ].forEach((funcName) => {
+          const key = (funcName[3]?.toLowerCase() +
+            funcName.slice(4)) as keyof NodeDataInterface['features'];
+          const func = (this as any)[funcName];
+          func()
+            .then(() => {
+              this.setFeature({
+                key,
+                value: true,
+              });
+            })
+            .catch(() => {
+              this.setFeature({
+                key,
+                value: false,
+              });
+            });
+        });
+
+        this.setIsConnected(true);
+        this.saveHistory();
+        this.setError(null);
+      } catch (error: unknown) {
+        this.setIsConnected(false);
+        this.setError((error as Error).message || String(error));
       }
     },
     refreshServerStatus() {
-      void this.api?.get('/metrics.json')?.then((response: AxiosResponse) => {
-        this.setData({
-          metrics: response.data,
+      // Metrics are optional; update if valid, otherwise clear so UI can hide them.
+      void this.api
+        ?.get('/metrics.json')
+        ?.then((response: AxiosResponse) => {
+          if (isValidMetricsPayload(response.data)) {
+            this.setData({ metrics: response.data });
+          } else {
+            this.setData({ metrics: {} });
+          }
+        })
+        .catch(() => {
+          this.setData({ metrics: {} });
         });
-      });
+      this.api
+        ?.get('/health')
+        ?.then((response: AxiosResponse) => {
+          this.setData({ health: response.data });
+          this.setFeature({
+            key: 'health',
+            value: true,
+          });
+        })
+        .catch(() => {
+          this.setFeature({ key: 'health', value: false });
+        });
       this.api
         ?.get('/stats.json')
         ?.then((response: AxiosResponse) => {
@@ -272,17 +438,26 @@ export const useNodeStore = defineStore('node', {
       });
     },
     async getAnalyticsRules() {
-      await this.api?.getAnalyticsRules()?.then((response: any) => {
-        this.setData({
-          analyticsRules: response.rules,
+      await this.api
+        ?.getAnalyticsRules()
+        ?.then((response: AnalyticsRuleSchema[] | { rules: AnalyticsRuleSchema[] }) => {
+          const analyticsRules = Array.isArray(response) ? response : (response?.rules ?? []);
+          this.setData({
+            analyticsRules,
+          });
+        })
+        .catch((error) => {
+          this.setError((error as Error).message);
+          this.setData({
+            analyticsRules: [],
+          });
         });
-      });
     },
     async deleteAnalyticsRule(name: string) {
       await this.api?.deleteAnalyticsRule(name);
       void this.getAnalyticsRules();
     },
-    async createAnalyticsRule(rule: AnalyticsRuleSchema) {
+    async createAnalyticsRule(rule: AnalyticsRuleCreateSchema) {
       try {
         this.setError(null);
         await this.api?.upsertAnalyticsRule(rule.name, rule);
@@ -292,7 +467,7 @@ export const useNodeStore = defineStore('node', {
       }
     },
     async getSearchPresets() {
-      await this.api?.getSearchPresets()?.then((response: { presets: PresetSchema[] }) => {
+      await this.api?.getSearchPresets()?.then((response: { presets: PresetSchema<any>[] }) => {
         this.setData({
           searchPresets: response.presets,
         });
@@ -331,23 +506,78 @@ export const useNodeStore = defineStore('node', {
       await this.api?.deleteStopwords(id);
       void this.getStopwords();
     },
-    getSynonyms(collectionName: string) {
-      void this.api
-        ?.getSynonyms(collectionName)
-        ?.then((response: { synonyms: SynonymSchema[] }) => {
+    async getStemmingDictionaries() {
+      await this.api
+        ?.getStemmingDictionaries()
+        ?.then((response: StemmingDictionariesRetrieveSchema) => {
           this.setData({
-            synonyms: response.synonyms,
+            stemmingDictionaries: response.dictionaries,
           });
         });
     },
-    getOverrides(collectionName: string) {
-      void this.api
-        ?.getOverrides(collectionName)
-        ?.then((response: { overrides: OverrideSchema[] }) => {
-          this.setData({
-            overrides: response.overrides,
-          });
+    async upsertStemmingDictionaries(dictionary: StemmingDictionarySchema) {
+      try {
+        this.setError(null);
+        await this.api?.upsertStemmingDictionaries(dictionary.id, dictionary.words);
+        void this.getStemmingDictionaries();
+      } catch (error) {
+        this.setError((error as Error).message);
+      }
+    },
+    async getStemmingDictionary(id: string) {
+      return await this.api?.getStemmingDictionary(id);
+    },
+    async deleteStemmingDictionary(id: string) {
+      await this.api?.delete(`/stemming/dictionaries/${id}`);
+      void this.getStemmingDictionaries();
+    },
+    getSynonyms(collectionName: string) {
+      if (this.data.features.synonymSets) {
+        void this.api?.getSynonymSets()?.then((sets: SynonymSetSchema[]) => {
+          const collection = collectionName
+            ? this.currentCollection?.name === collectionName
+              ? this.currentCollection
+              : this.data.collections.find((c) => c.name === collectionName)
+            : null;
+          const allowedSets = collection?.synonym_sets;
+          const filteredSets =
+            allowedSets !== undefined ? sets.filter((set) => allowedSets.includes(set.name)) : sets;
+          const synonyms: SynonymRow[] = filteredSets.flatMap((set) =>
+            set.items.map((item) => ({ ...item, _setName: set.name })),
+          );
+          this.setData({ synonyms });
         });
+      } else if (collectionName) {
+        void this.api
+          ?.getSynonyms(collectionName)
+          ?.then((response: { synonyms: SynonymSchema[] }) => {
+            this.setData({ synonyms: response.synonyms });
+          });
+      }
+    },
+    getOverrides(collectionName: string) {
+      if (this.data.features.curationSets) {
+        void this.api?.getCurationSets()?.then((sets: CurationSetsListEntrySchema[]) => {
+          const collection = collectionName
+            ? this.currentCollection?.name === collectionName
+              ? this.currentCollection
+              : this.data.collections.find((c) => c.name === collectionName)
+            : null;
+          const allowedSets = collection?.curation_sets;
+          const filteredSets =
+            allowedSets !== undefined ? sets.filter((set) => allowedSets.includes(set.name)) : sets;
+          const overrides: OverrideRow[] = filteredSets.flatMap((set) =>
+            set.items.map((item) => ({ ...item, _setName: set.name })),
+          );
+          this.setData({ overrides });
+        });
+      } else if (collectionName) {
+        void this.api
+          ?.getOverrides(collectionName)
+          ?.then((response: { overrides: OverrideSchema[] }) => {
+            this.setData({ overrides: response.overrides });
+          });
+      }
     },
     /**
      * Re-checks a PIA session against PIA: refreshes a token that is near expiry, then re-reads
@@ -403,10 +633,34 @@ export const useNodeStore = defineStore('node', {
       }
     },
     login(loginData: NodeLoginPayloadInterface) {
-      const { apiKey, node, forceHomeRedirect = false } = loginData;
+      const { apiKey, node, forceHomeRedirect = false, connectionTimeoutSeconds } = loginData;
       this.setPiaSession(null);
+      let { clusterTag } = loginData;
+      // Recover clusterTag from history if not provided
+      if (!clusterTag) {
+        try {
+          const targetKey = JSON.stringify({ node, apiKey });
+          for (const item of this.loginHistoryParsed) {
+            const key = JSON.stringify({ node: item.node, apiKey: item.apiKey });
+            if (key === targetKey && item.clusterTag) {
+              clusterTag = item.clusterTag;
+              break;
+            }
+          }
+        } catch {
+          /* ignore */
+        }
+      }
       this.setForceRedirect(forceHomeRedirect);
-      this.setNodeData({ apiKey, node });
+      this.setCurrentNodeConfig(node);
+      const nodeData: NodeLoginDataInterface = { apiKey, node };
+      if (clusterTag !== undefined) {
+        nodeData.clusterTag = clusterTag;
+      }
+      if (connectionTimeoutSeconds !== undefined) {
+        nodeData.connectionTimeoutSeconds = connectionTimeoutSeconds;
+      }
+      this.setNodeData(nodeData);
       void this.connectionCheck();
     },
     logout() {
@@ -421,6 +675,9 @@ export const useNodeStore = defineStore('node', {
       this.logout();
       this.loginHistory = [];
       LocalStorage.remove(STORAGE_KEY_LOGIN_HISTORY);
+    },
+    isCurrent(member: NodeLoginDataInterface): boolean {
+      return JSON.stringify(this.loginData) === JSON.stringify(member);
     },
     loadCurrentCollection(collection: CollectionSchema | null) {
       this.setCurrentCollection(collection);
@@ -530,55 +787,233 @@ export const useNodeStore = defineStore('node', {
       await this.api?.deleteApiKey(id);
       void this.getApiKeys();
     },
-    async createSynonym(payload: { id: string; synonym: SynonymCreateSchema }) {
-      try {
-        this.setError(null);
-        if (!this.currentCollection) {
-          throw new Error('No collection selected');
+    async getSynonymSets() {
+      return await this.api?.getSynonymSets();
+    },
+    async getCurationSets() {
+      return await this.api?.getCurationSets();
+    },
+    async fetchAllSynonymSets(): Promise<SynonymSetSchema[]> {
+      const response = await this.getSynonymSets();
+      return Array.isArray(response) ? response : [];
+    },
+    async fetchAllCurationSets(): Promise<CurationSetsListEntrySchema[]> {
+      const response = await this.getCurationSets();
+      return Array.isArray(response) ? response : [];
+    },
+    async linkSynonymSetToCollection(setName: string, collectionName?: string) {
+      if (!this.data.features.synonymSets) return;
+      const col = collectionName
+        ? this.data.collections.find((c) => c.name === collectionName)
+        : this.currentCollection;
+      if (!col) return;
+      const existingSets = col.synonym_sets ?? [];
+      if (!existingSets.includes(setName)) {
+        const newSets = [...existingSets, setName];
+        await this.api?.updateCollection(col.name, { synonym_sets: newSets });
+        if (this.currentCollection?.name === col.name) {
+          this.setCurrentCollection({ ...this.currentCollection, synonym_sets: newSets });
+          void this.getSynonyms(col.name);
         }
-        await this.api?.upsertSynonym(this.currentCollection.name, payload.id, {
-          id: payload.id,
-          ...payload.synonym,
+        void this.getCollections();
+      }
+    },
+    async linkCurationSetToCollection(setName: string, collectionName?: string) {
+      if (!this.data.features.curationSets) return;
+      const col = collectionName
+        ? this.data.collections.find((c) => c.name === collectionName)
+        : this.currentCollection;
+      if (!col) return;
+      const existingSets = col.curation_sets ?? [];
+      if (!existingSets.includes(setName)) {
+        const newSets = [...existingSets, setName];
+        await this.api?.updateCollection(col.name, {
+          curation_sets: newSets,
         });
-        void this.getSynonyms(this.currentCollection?.name);
-      } catch (error) {
-        this.setError((error as Error).message);
+        if (this.currentCollection?.name === col.name) {
+          this.setCurrentCollection({ ...this.currentCollection, curation_sets: newSets });
+          void this.getOverrides(col.name);
+        }
+        void this.getCollections();
       }
     },
-    async deleteSynonym(id: string) {
-      if (!this.currentCollection) {
-        throw new Error('No collection selected');
-      }
-      await this.api?.deleteSynonym(this.currentCollection.name, id);
-      void this.getSynonyms(this.currentCollection?.name);
-    },
-    async createOverride(payload: { id: string; override: OverrideSchema }) {
+    async createSynonym(payload: { id: string; synonym: SynonymCreateSchema; setName?: string }) {
       try {
         this.setError(null);
-        if (!this.currentCollection) {
-          throw new Error('No collection selected');
+        if (this.data.features.synonymSets) {
+          const setName = payload.setName || payload.id;
+          if (payload.setName) {
+            await this.api?.upsertSynonymSetItem(setName, payload.id, payload.synonym);
+          } else {
+            await this.api?.upsertSynonymSet(setName, {
+              items: [{ id: payload.id, ...payload.synonym }],
+            });
+          }
+          if (this.currentCollection) {
+            const existingSets = this.currentCollection.synonym_sets ?? [];
+            if (!existingSets.includes(setName)) {
+              await this.api?.updateCollection(this.currentCollection.name, {
+                synonym_sets: [...existingSets, setName],
+              });
+              this.setCurrentCollection({
+                ...this.currentCollection,
+                synonym_sets: [...existingSets, setName],
+              });
+              void this.getCollections();
+            }
+            void this.getSynonyms(this.currentCollection.name);
+          } else {
+            void this.getSynonyms('');
+          }
+        } else {
+          if (!this.currentCollection) {
+            throw new Error('No collection selected');
+          }
+          await this.api?.upsertSynonym(this.currentCollection.name, payload.id, {
+            id: payload.id,
+            ...payload.synonym,
+          });
+          void this.getSynonyms(this.currentCollection.name);
         }
-        await this.api?.upsertOverride(this.currentCollection.name, payload.id, payload.override);
-        void this.getOverrides(this.currentCollection?.name);
       } catch (error) {
         this.setError((error as Error).message);
       }
     },
-    async deleteOverride(id: string) {
+    async deleteSynonym(payload: { id: string; setName?: string }) {
+      try {
+        this.setError(null);
+        if (this.data.features.synonymSets) {
+          if (!payload.setName) {
+            throw new Error('Cannot delete a V30 synonym item without its parent set name');
+          }
+          const set = await this.api?.getSynonymSet(payload.setName);
+          if (!set) {
+            throw new Error(`Synonym set ${payload.setName} not found`);
+          }
+          if (set.items.length <= 1) {
+            await this.api?.deleteSynonymSet(payload.setName);
+          } else {
+            await this.api?.deleteSynonymSetItem(payload.setName, payload.id);
+          }
+          if (this.currentCollection) {
+            const existingSets = this.currentCollection.synonym_sets ?? [];
+            if (set.items.length <= 1 && existingSets.includes(payload.setName)) {
+              const synonym_sets = existingSets.filter((setName) => setName !== payload.setName);
+              await this.api?.updateCollection(this.currentCollection.name, { synonym_sets });
+              this.setCurrentCollection({ ...this.currentCollection, synonym_sets });
+            }
+            void this.getCollections();
+            void this.getSynonyms(this.currentCollection.name);
+          } else {
+            void this.getSynonyms('');
+          }
+        } else {
+          if (!this.currentCollection) {
+            throw new Error('No collection selected');
+          }
+          await this.api?.deleteSynonym(this.currentCollection.name, payload.id);
+          void this.getSynonyms(this.currentCollection.name);
+        }
+      } catch (error) {
+        this.setError((error as Error).message);
+      }
+    },
+    async createOverride(payload: {
+      id: string;
+      override: OverrideCreateSchema;
+      setName?: string;
+    }) {
+      try {
+        this.setError(null);
+        const overridePayload = JSON.parse(
+          JSON.stringify(payload.override),
+        ) as OverrideCreateSchema;
+        if (!this.supportsCurationRuleTags && overridePayload.rule) {
+          delete overridePayload.rule.tags;
+        }
+        if (this.data.features.curationSets) {
+          const setName = payload.setName || payload.id;
+          const curationItem = { ...overridePayload, id: payload.id } as CurationObjectSchema;
+          if (payload.setName) {
+            await this.api?.upsertCurationSetItem(setName, curationItem);
+          } else {
+            await this.api?.upsertCurationSet(setName, {
+              items: [curationItem],
+            });
+          }
+          if (this.currentCollection) {
+            const existingSets = this.currentCollection.curation_sets ?? [];
+            if (!existingSets.includes(setName)) {
+              const curation_sets = [...existingSets, setName];
+              await this.api?.updateCollection(this.currentCollection.name, {
+                curation_sets,
+              });
+              this.setCurrentCollection({ ...this.currentCollection, curation_sets });
+              void this.getCollections();
+            }
+            void this.getOverrides(this.currentCollection.name);
+          } else {
+            void this.getOverrides('');
+          }
+        } else {
+          if (!this.currentCollection) {
+            throw new Error('No collection selected');
+          }
+          await this.api?.upsertOverride(this.currentCollection.name, payload.id, overridePayload);
+          void this.getOverrides(this.currentCollection.name);
+        }
+      } catch (error) {
+        this.setError((error as Error).message);
+      }
+    },
+    async deleteOverride(payload: { id: string; setName?: string }) {
+      try {
+        this.setError(null);
+        if (this.data.features.curationSets) {
+          if (!payload.setName) {
+            throw new Error('Cannot delete a V30 curation item without its parent set name');
+          }
+          const set = await this.api?.getCurationSet(payload.setName);
+          if (!set) {
+            throw new Error(`Curation set ${payload.setName} not found`);
+          }
+          if ((set.items ?? []).length <= 1) {
+            await this.api?.deleteCurationSet(payload.setName);
+          } else {
+            await this.api?.deleteCurationSetItem(payload.setName, payload.id);
+          }
+          if (this.currentCollection) {
+            const existingSets = this.currentCollection.curation_sets ?? [];
+            if ((set.items ?? []).length <= 1 && existingSets.includes(payload.setName)) {
+              const curation_sets = existingSets.filter((setName) => setName !== payload.setName);
+              await this.api?.updateCollection(this.currentCollection.name, {
+                curation_sets,
+              });
+              this.setCurrentCollection({ ...this.currentCollection, curation_sets });
+            }
+            void this.getCollections();
+            void this.getOverrides(this.currentCollection.name);
+          } else {
+            void this.getOverrides('');
+          }
+        } else {
+          if (!this.currentCollection) {
+            throw new Error('No collection selected');
+          }
+          await this.api?.deleteOverride(this.currentCollection.name, payload.id);
+          void this.getOverrides(this.currentCollection.name);
+        }
+      } catch (error) {
+        this.setError((error as Error).message);
+      }
+    },
+    deleteDocumentById(id: string) {
       if (!this.currentCollection) {
         throw new Error('No collection selected');
       }
-      await this.api?.deleteOverride(this.currentCollection.name, id);
-      void this.getOverrides(this.currentCollection.name);
+      return this.api?.deleteDocumentById(this.currentCollection.name, id);
     },
-    async deleteDocumentById(id: string) {
-      if (!this.currentCollection) {
-        throw new Error('No collection selected');
-      }
-      void (await this.api?.deleteDocumentById(this.currentCollection.name, id));
-      // TODO refresh
-    },
-    search(payload: SearchParams) {
+    search(payload: SearchParams<any>) {
       return (this.api as Api)?.search(
         this.currentCollection?.name || '',
         JSON.parse(JSON.stringify(payload)), // remove proxy which is not serializable
@@ -599,7 +1034,7 @@ export const useNodeStore = defineStore('node', {
         const blob = new Blob([documents], {
           type: 'text/plain;charset=utf-8',
         });
-        FileSaver.saveAs(blob, `${collectionName}.ljson`);
+        FileSaver.saveAs(blob, `${collectionName}.jsonl`);
       });
     },
 
@@ -669,8 +1104,26 @@ export const useNodeStore = defineStore('node', {
         this.setError((error as Error).message);
       }
     },
+    async createSnapshot(snapshotPath: string) {
+      try {
+        this.setError(null);
+        const response = await this.api?.createSnapshot(snapshotPath);
+        if (response?.success) {
+          Notify.create({
+            position: 'top',
+            progress: true,
+            group: false,
+            timeout: 3000,
+            color: 'positive',
+            message: `Snapshot created successfully at: ${snapshotPath}`,
+          });
+        }
+      } catch (error) {
+        this.setError((error as Error).message);
+      }
+    },
     /*** mutations from vuex migration ****/
-    setNodeData(payload: { apiKey: string; node: CustomNodeConfiguration } | null) {
+    setNodeData(payload: NodeLoginDataInterface | null): void {
       this.loginData = payload;
       if (payload) {
         LocalStorage.set(STORAGE_KEY_LOGIN, payload);
@@ -685,6 +1138,21 @@ export const useNodeStore = defineStore('node', {
       } else {
         LocalStorage.remove(STORAGE_KEY_PIA_SESSION);
       }
+    },
+    setCurrentNodeConfig(config: Partial<CustomNodeConfiguration>): void {
+      const merged: CustomNodeConfiguration = {
+        ...this.currentNodeConfig,
+        ...(config as CustomNodeConfiguration),
+      };
+
+      if (!merged.protocol) merged.protocol = 'http';
+      if (!merged.host) merged.host = 'localhost';
+      const port = Number(merged.port);
+      merged.port = Number.isFinite(port) ? port : 8108;
+      if (merged.path == null) merged.path = '';
+      if (typeof merged.tls !== 'boolean') merged.tls = true;
+
+      this.currentNodeConfig = merged;
     },
     setIsConnected(status: boolean): void {
       const route = this.router.currentRoute.value;
@@ -724,11 +1192,100 @@ export const useNodeStore = defineStore('node', {
         this.loginHistory.splice(index, 1);
       }
       this.loginHistory.unshift(currentLoginDataJson);
+      // cleanup remove duplicates without custom tags and preserve custom tags
+      // Strategy:
+      // - Consider duplicates based on { node, apiKey } only (ignore clusterTag for identity)
+      // - Keep at most one entry per identity
+      // - Prefer a tagged entry over an untagged one; if an untagged was kept earlier,
+      //   replace it when we encounter a tagged duplicate
+      // - If a tagged entry already exists for an identity, drop subsequent duplicates
+      try {
+        const cleaned: string[] = [];
+        const keptPosByKey = new Map<string, number>();
+        const hasTaggedByKey = new Map<string, boolean>();
+
+        for (const raw of this.loginHistory) {
+          if (typeof raw !== 'string') continue;
+          let parsed: NodeLoginDataInterface | null = null;
+          try {
+            parsed = JSON.parse(raw) as NodeLoginDataInterface;
+          } catch {
+            // ignore malformed entries
+            continue;
+          }
+          if (!parsed || !parsed.node || !parsed.apiKey) continue;
+
+          const identityKey = JSON.stringify({ node: parsed.node, apiKey: parsed.apiKey });
+          const hasTag = Boolean(parsed.clusterTag && String(parsed.clusterTag).length > 0);
+
+          if (!keptPosByKey.has(identityKey)) {
+            cleaned.push(raw);
+            keptPosByKey.set(identityKey, cleaned.length - 1);
+            hasTaggedByKey.set(identityKey, hasTag);
+            continue;
+          }
+
+          const alreadyTagged = hasTaggedByKey.get(identityKey) === true;
+          if (alreadyTagged) {
+            // We already kept a tagged entry for this identity; drop duplicates
+            continue;
+          }
+
+          // We only have an untagged kept so far
+          if (hasTag) {
+            // Replace previously kept untagged with this tagged one
+            const pos = keptPosByKey.get(identityKey)!;
+            cleaned[pos] = raw;
+            hasTaggedByKey.set(identityKey, true);
+          }
+          // else: both untagged duplicates -> drop current
+        }
+
+        this.loginHistory = cleaned;
+      } catch {
+        // If anything goes wrong during cleanup, keep the current list as-is
+      }
       LocalStorage.set(STORAGE_KEY_LOGIN_HISTORY, this.loginHistory);
     },
     clearHistory(): void {
       this.loginHistory = [];
       LocalStorage.set(STORAGE_KEY_LOGIN_HISTORY, []);
+    },
+    removeHistoryAt(index: number): void {
+      if (index >= 0 && index < this.loginHistory.length) {
+        this.loginHistory.splice(index, 1);
+        LocalStorage.set(STORAGE_KEY_LOGIN_HISTORY, this.loginHistory);
+      }
+    },
+    setHistoryTag(index: number, tag: string): void {
+      if (index < 0 || index >= this.loginHistoryParsed.length) return;
+      const parsed = this.loginHistoryParsed[index] as NodeLoginDataInterface;
+      const updated: NodeLoginDataInterface = {
+        node: parsed.node,
+        apiKey: parsed.apiKey,
+        clusterTag: tag,
+      };
+      if (parsed.connectionTimeoutSeconds !== undefined) {
+        updated.connectionTimeoutSeconds = parsed.connectionTimeoutSeconds;
+      }
+      this.loginHistory.splice(index, 1, JSON.stringify(updated));
+      LocalStorage.set(STORAGE_KEY_LOGIN_HISTORY, this.loginHistory);
+      if (this.loginData) {
+        this.loginData.clusterTag = tag;
+      }
+    },
+    removeHistoryTag(index: number): void {
+      if (index < 0 || index >= this.loginHistoryParsed.length) return;
+      const base = this.loginHistoryParsed[index] as NodeLoginDataInterface;
+      const noTag: NodeLoginDataInterface = { node: base.node, apiKey: base.apiKey };
+      if (base.connectionTimeoutSeconds !== undefined) {
+        noTag.connectionTimeoutSeconds = base.connectionTimeoutSeconds;
+      }
+      this.loginHistory.splice(index, 1, JSON.stringify(noTag));
+      LocalStorage.set(STORAGE_KEY_LOGIN_HISTORY, this.loginHistory);
+      if (this.loginData) {
+        delete this.loginData.clusterTag;
+      }
     },
     setForceRedirect(value: boolean): void {
       this.forceHomeRedirect = value;
@@ -755,6 +1312,9 @@ export const useNodeStore = defineStore('node', {
     },
     setDocumentsToEdit(documents: any[]): void {
       this.documentsToEdit = documents;
+    },
+    setUIConfig(config: UIConfigInterface): void {
+      this.uiConfig = { ...this.uiConfig, ...config };
     },
   },
 });
