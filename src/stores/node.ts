@@ -93,7 +93,22 @@ export function gatewayNodeConfig(): CustomNodeConfiguration {
   };
 }
 
+/**
+ * Web builds without the "API key" tab must not restore API-key logins saved before it was
+ * hidden: they bypass PIA and its roles. Forgets the saved login and history; PIA sessions stay.
+ */
+function dropSavedApiKeyLogin(): boolean {
+  if (process.env.ENABLE_API_KEY_LOGIN !== 'false') return false;
+  if (!LocalStorage.getItem(STORAGE_KEY_LOGIN) || LocalStorage.getItem(STORAGE_KEY_PIA_SESSION)) {
+    return false;
+  }
+  LocalStorage.remove(STORAGE_KEY_LOGIN);
+  LocalStorage.remove(STORAGE_KEY_LOGIN_HISTORY);
+  return true;
+}
+
 function state(): NodeStateInterface {
+  const droppedApiKeyLogin = dropSavedApiKeyLogin();
   return {
     loginData: LocalStorage.getItem(STORAGE_KEY_LOGIN),
     piaSession: LocalStorage.getItem(STORAGE_KEY_PIA_SESSION),
@@ -101,7 +116,7 @@ function state(): NodeStateInterface {
     forceHomeRedirect: false,
     isConnected: false,
     previousRoute: null,
-    error: null,
+    error: droppedApiKeyLogin ? 'Please sign in with your Printo account.' : null,
     currentCollection: null,
     documentsToEdit: [],
     data: {
