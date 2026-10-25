@@ -6,7 +6,7 @@
     :middlewares="middlewares"
   >
     <ais-configure :hits-per-page.camel="12" />
-    <div class="row items-center q-col-gutter-sm no-wrap-md">
+    <div class="row items-center q-col-gutter-sm no-wrap-md search-controls">
       <div class="col-12 col-md">
         <ais-search-box v-slot="{ currentRefinement, refine }">
           <debounced-search-box :model-value="currentRefinement" @refine="refine" />
@@ -45,7 +45,7 @@
         ></q-select>
       </div>
     </div>
-    <div class="row items-center q-col-gutter-sm q-mt-none">
+    <div class="row items-center q-col-gutter-sm q-mt-none search-controls">
       <div class="col-auto">
         <ais-stats></ais-stats>
       </div>
@@ -297,6 +297,22 @@ watch(
 .body--dark .ais-InstantSearch option {
   background-color: #1f2937;
   color: #fff;
+}
+
+/* one height for every control so the two rows line up */
+.search-controls .ais-SortBy-select,
+.search-controls .ais-HitsPerPage-select {
+  box-sizing: border-box;
+  height: 40px;
+}
+
+.search-controls .q-btn,
+.search-controls .q-btn-dropdown .q-btn {
+  height: 40px;
+}
+
+.search-controls .ais-CurrentRefinements {
+  margin: 0;
 }
 
 .filters-panel {
