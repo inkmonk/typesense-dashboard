@@ -50,6 +50,23 @@
         <ais-stats></ais-stats>
       </div>
       <q-space />
+      <div v-if="hasFacets" class="col-auto">
+        <ais-current-refinements v-slot="{ items }">
+          <q-btn
+            outline
+            no-caps
+            color="primary"
+            icon="filter_list"
+            label="Filters"
+            :icon-right="filtersOpen ? 'expand_less' : 'expand_more'"
+            @click="filtersOpen = !filtersOpen"
+          >
+            <q-badge v-if="refinementCount(items)" color="accent" floating>
+              {{ refinementCount(items) }}
+            </q-badge>
+          </q-btn>
+        </ais-current-refinements>
+      </div>
       <div class="col-auto">
         <ais-hits-per-page
           :items="[
@@ -66,35 +83,37 @@
     </div>
     <ais-current-refinements />
 
-    <div class="row q-mt-md">
-      <div class="col-3 q-pr-sm">
-        <div v-for="name in facetNumberFields" :key="name" class="q-mb-sm">
-          <div class="text-subtitle2 q-pt-md">{{ name }}</div>
+    <!-- v-show, not v-if: hiding the panel must not unmount the widgets, or their filters reset -->
+    <q-card v-show="filtersOpen" flat bordered class="q-mt-sm q-pa-md filters-panel">
+      <div class="row q-col-gutter-md">
+        <div v-for="name in facetNumberFields" :key="name" class="col-12 col-sm-6 col-md-4">
+          <div class="text-subtitle2">{{ name }}</div>
           <ais-range-input :searchable="true" :attribute="name" />
         </div>
 
-        <div v-for="name in facetStringFields" :key="name" class="q-mb-sm">
-          <div class="text-subtitle2 q-pt-md">{{ name }}</div>
-          <ais-refinement-list class="q-mb-sm" :searchable="true" :attribute="name" />
+        <div v-for="name in facetStringFields" :key="name" class="col-12 col-sm-6 col-md-4">
+          <div class="text-subtitle2">{{ name }}</div>
+          <ais-refinement-list :searchable="true" :attribute="name" />
         </div>
 
-        <div v-for="name in facetBooleanFields" :key="name" class="q-mb-sm">
-          <div class="text-subtitle2 q-pt-md">{{ name }}</div>
-          <ais-refinement-list class="q-mb-sm" :attribute="name" />
+        <div v-for="name in facetBooleanFields" :key="name" class="col-12 col-sm-6 col-md-4">
+          <div class="text-subtitle2">{{ name }}</div>
+          <ais-refinement-list :attribute="name" />
         </div>
       </div>
-      <div class="col-9">
-        <ais-pagination class="q-mb-md" />
-        <ais-hits>
-          <template v-if="currentCollection" #item="{ item }">
-            <search-result-item
-              :item="item"
-              @deleted="instantSearchInstance.refresh()"
-            ></search-result-item>
-          </template>
-        </ais-hits>
-        <ais-pagination class="q-my-md" />
-      </div>
+    </q-card>
+
+    <div class="q-mt-md">
+      <ais-pagination class="q-mb-md" />
+      <ais-hits>
+        <template v-if="currentCollection" #item="{ item }">
+          <search-result-item
+            :item="item"
+            @deleted="instantSearchInstance.refresh()"
+          ></search-result-item>
+        </template>
+      </ais-hits>
+      <ais-pagination class="q-my-md" />
     </div>
   </ais-instant-search>
   <div v-else-if="searchClientError">
@@ -122,6 +141,7 @@ const instantSearchInstance = ref<any>();
 const searchClientError = ref<string | null>(null);
 const currentStopwordsSet = ref(null);
 const maxCandidates = ref(4);
+const filtersOpen = ref(false);
 
 const middlewares = [
   ({ instantSearchInstance: instance }: any) => {
@@ -165,6 +185,16 @@ const facetBooleanFields = computed((): string[] => {
     .filter((f) => f.facet && ['bool', 'bool[]'].includes(f.type) && !f.name.includes('.*'))
     .map((f) => f.name);
 });
+
+const hasFacets = computed(
+  () =>
+    facetNumberFields.value.length > 0 ||
+    facetStringFields.value.length > 0 ||
+    facetBooleanFields.value.length > 0,
+);
+
+const refinementCount = (items: { refinements: unknown[] }[]) =>
+  items.reduce((total, item) => total + item.refinements.length, 0);
 
 const sortBy = computed((): { value: string; label: string }[] => {
   if (!currentCollection.value || !currentCollection.value.fields) return [];
@@ -267,6 +297,11 @@ watch(
 .body--dark .ais-InstantSearch option {
   background-color: #1f2937;
   color: #fff;
+}
+
+.filters-panel {
+  max-height: 50vh;
+  overflow-y: auto;
 }
 
 .ais-InfiniteHits-item,
