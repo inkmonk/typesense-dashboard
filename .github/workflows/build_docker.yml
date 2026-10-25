@@ -9,6 +9,8 @@ on:
 
 jobs:
   build:
+    # Publishes to the original author's accounts; skip on forks.
+    if: github.repository == 'bfritscher/typesense-dashboard'
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v7
