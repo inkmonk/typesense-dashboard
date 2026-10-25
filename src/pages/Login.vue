@@ -252,7 +252,7 @@ interface GoogleIdentity {
 const store = useNodeStore();
 
 const googleClientId = import.meta.env.GOOGLE_CLIENT_ID;
-const apiKeyLoginEnabled = import.meta.env.ENABLE_API_KEY_LOGIN !== 'false';
+const apiKeyLoginEnabled = String(import.meta.env.ENABLE_API_KEY_LOGIN) !== 'false';
 
 const tab = ref<'pia' | 'apikey'>('pia');
 const employeeId = ref('');

@@ -158,7 +158,7 @@ function isValidCollectionsPayload(payload: unknown): payload is CollectionSchem
  * hidden: they bypass PIA and its roles. Forgets the saved login and history; PIA sessions stay.
  */
 function dropSavedApiKeyLogin(): boolean {
-  if (import.meta.env.ENABLE_API_KEY_LOGIN !== 'false') return false;
+  if (String(import.meta.env.ENABLE_API_KEY_LOGIN) !== 'false') return false;
   if (!LocalStorage.getItem(STORAGE_KEY_LOGIN) || LocalStorage.getItem(STORAGE_KEY_PIA_SESSION)) {
     return false;
   }
