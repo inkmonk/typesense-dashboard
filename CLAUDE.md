@@ -46,7 +46,7 @@ Quasar (Vue 3 + Vite, TypeScript) app that ships as both a static SPA and an Ele
 
 **Gateway** (`gateway/`, live on typesense.printo.in): `auth-service.js` (dependency-free Node, `127.0.0.1:9177`, systemd unit `typesense-auth`) is called by nginx `auth_request` for every `/v1/` request that carries a token; it checks the token with PIA (cached 60s) and answers 200 + `X-Role: admin|readonly`, 401, 403, or 503 (PIA down, fails closed). The two Typesense keys live only in `/etc/nginx/conf.d/typesense-keys.conf` on the server (root-only, never in git). Port 9100 is taken by Prometheus node_exporter, hence 9177. `gateway/README.md` has the rollout and rollback steps.
 
-**LEGACY path, still open.** Web builds hide the "API key" tab by default, but the nginx `LEGACY` block is still there: requests with no `Authorization` header skip the gateway and keep using the `x-typesense-api-key` they send (scripts, anyone holding a Typesense key). Web builds also forget saved API-key logins at startup (`dropSavedApiKeyLogin` in `stores/node.ts`, shows "Please sign in with your Printo account"). So hiding the tab is cosmetic; anyone with a key still bypasses PIA. Closing it = delete the `LEGACY` blocks in the nginx file, then rotate the old admin key (`gateway/README.md` step 7).
+**LEGACY path, still open.** Web builds hide the "API key" tab by default, but the nginx `LEGACY` block is still there: requests with no `Authorization` header skip the gateway and keep using the `x-typesense-api-key` they send (scripts, anyone holding a Typesense key). Web builds also forget saved API-key logins at startup (`dropSavedApiKeyLogin` in `stores/node.ts`, shows "Please sign in with your Printo account"). So hiding the tab is cosmetic; anyone with a key still bypasses PIA. **Do not simply delete the `LEGACY` blocks or rotate the old admin key: other systems depend on this path** (see "Not done yet").
 
 **PIA is called through the same host** in web builds (`/pia/` in nginx, and the dev-server proxy), because PIA's CORS preflight sends two `Access-Control-Allow-Origin` values and browsers reject that. Electron calls PIA directly.
 
@@ -74,7 +74,15 @@ Build-time env (see `printoEnv` in `quasar.config.ts`; `.env.deploy` on the serv
 
 ## Not done yet
 
-Close the LEGACY path and rotate the old admin key (above); check the read-only view with a real non-staff ops account.
+**1. Restrict the LEGACY path and rotate the old admin key (needs a design, not a deletion).** Systems that reach `https://typesense.printo.in/v1/` with a bare Typesense key and no PIA token, which is exactly the legacy path:
+
+- the **public website search**: `Printo.in/printo-nextjs` and the `MarketV2` client of `Printo.in/webapp` search from visitors' browsers with search-only keys;
+- the **data sync**: `Printo.in/webapp/inkmonkweb/typesense_search.py`, run by the Celery task `scheduled_typesense_records_sync`, reads `TYPESENSE_URL` and `TYPESENSE_API_KEY` from the web app's config and creates collections, imports (`documents/import?action=emplace`), exports, deletes documents and manages analytics rules. Where `TYPESENSE_URL` points (public host or an internal address) is not known yet;
+- anyone holding a key (scripts, the old dashboard login).
+
+Removing the nginx `LEGACY` block, or rotating the old admin key before every consumer has been updated, would break website search and/or the sync. Ideas to evaluate: keep the legacy path but allow only the search endpoints (`multi_search`, `documents/search`) for requests without a PIA token; let the sync write through an internal address (or give it its own scoped key); rotate keys only after each consumer's config has been updated, one at a time, with a rollback. First find out where `TYPESENSE_URL` points in the web app's production config.
+
+**2.** Check the read-only view with a real non-staff ops account (sign out, sign back in with Google; expect the orange "Read-only" label, no API Keys / Add Document, no forms or Edit/Delete buttons, Stemming included).
 
 ## Conventions
 
