@@ -117,9 +117,13 @@ curl -s -o /dev/null -w 'your token, metrics (200 if staff): %{http_code}\n' -H 
 For a non-staff ops user the write test should be refused by Typesense with 401/403. Then sign in
 on the dashboard through the PIA tab and look at collections, search and the server status page.
 
-**7. Close the legacy path** once everyone uses PIA: delete the `if ($http_authorization = "")`
-block and the `location /_ts_legacy/` block, `nginx -t`, reload, then rebuild the dashboard with
-`ENABLE_API_KEY_LOGIN=false` (the web build default now hides the tab already). Rotate the admin key afterwards if it was ever shared in clear text.
+**7. The legacy path: do not delete it yet.** The website's search (browsers using search-only keys)
+and the data sync (`Printo.in/webapp/inkmonkweb/typesense_search.py`) call `/v1/` with a bare Typesense
+key and no PIA token, which is exactly the `if ($http_authorization = "")` / `location /_ts_legacy/`
+path. Removing those blocks, or rotating the old admin key before every consumer is updated, would
+break them. Plan this separately (see "Not done yet" in `CLAUDE.md`): for example allow only the
+search endpoints without a token and send the sync through an internal address. The web build already
+hides the "API key" tab (`ENABLE_API_KEY_LOGIN`), which does not close the path.
 
 ## Checks worth doing once
 
