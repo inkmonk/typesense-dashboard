@@ -78,7 +78,7 @@
         />
       </div>
       <div class="col-auto">
-        <export-button @export="exportPage" />
+        <export-button allow-all @export="runExport" />
       </div>
     </div>
     <ais-current-refinements />
@@ -125,11 +125,12 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
+import { Dialog, Notify } from 'quasar';
 import { useNodeStore } from '@/stores/node';
 import SearchResultItem from '@/components/search/SearchResultItem.vue';
 import DebouncedSearchBox from '@/components/search/DebouncedSearchBox.vue';
 import ExportButton from '@/components/search/ExportButton.vue';
-import type { ExportFormat } from '@/components/search/ExportButton.vue';
+import type { ExportFormat, ExportScope } from '@/components/search/ExportButton.vue';
 import TypesenseInstantSearchAdapter from 'typesense-instantsearch-adapter';
 import type { CollectionSchema } from 'typesense/lib/Typesense/Collection';
 import type { ConfigurationOptions } from 'typesense/lib/Typesense/Configuration';
@@ -225,6 +226,74 @@ const exportPage = (format: ExportFormat) => {
       instantSearchInstance.value.renderState[currentCollection.value.name].hits.results.hits,
       format,
     );
+  }
+};
+
+const EXPORT_BATCH_SIZE = 250;
+const EXPORT_CONFIRM_ABOVE = 10000;
+
+// Walks every page of the current query and filters in batches (hitsPerPage 250 is the server
+// maximum) and exports the original documents, without the highlight data of the search.
+const exportAll = async (format: ExportFormat) => {
+  const helper = instantSearchInstance.value?.mainHelper;
+  // The query and filters of the widgets are only in the state of the last rendered results; the
+  // main helper's own state has none of them.
+  const state =
+    instantSearchInstance.value?.renderState[currentCollection.value?.name ?? '']?.hits?.results
+      ?._state;
+  if (!helper || !state) return;
+  const searchPage = (page: number) => {
+    // searchOnce reads helper.state synchronously, so the swap is restored before any await.
+    const current = helper.state;
+    helper.state = state;
+    try {
+      return helper.searchOnce({ page, hitsPerPage: EXPORT_BATCH_SIZE });
+    } finally {
+      helper.state = current;
+    }
+  };
+  const documents: Record<string, unknown>[] = [];
+  const progress = Notify.create({
+    group: false,
+    timeout: 0,
+    spinner: true,
+    message: 'Exporting…',
+  });
+  try {
+    for (let page = 0; ; page++) {
+      const { content } = await searchPage(page);
+      if (page === 0 && content.nbHits > EXPORT_CONFIRM_ABOVE) {
+        const confirmed = await new Promise<boolean>((resolve) => {
+          Dialog.create({
+            title: 'Export all results',
+            message: `This exports ${content.nbHits.toLocaleString()} documents and can take a while. Continue?`,
+            cancel: true,
+            persistent: true,
+          })
+            .onOk(() => resolve(true))
+            .onCancel(() => resolve(false));
+        });
+        if (!confirmed) return;
+      }
+      content.hits.forEach((hit: { _rawTypesenseHit?: { document?: object } }) => {
+        documents.push({ ...(hit._rawTypesenseHit?.document ?? hit) });
+      });
+      progress({ message: `Exporting ${documents.length} of ${content.nbHits}…` });
+      if (page + 1 >= content.nbPages || content.hits.length === 0) break;
+    }
+    store.exportRows(documents, format);
+  } catch (error) {
+    Notify.create({ type: 'negative', message: `Export failed: ${(error as Error).message}` });
+  } finally {
+    progress();
+  }
+};
+
+const runExport = (format: ExportFormat, scope: ExportScope) => {
+  if (scope === 'all') {
+    void exportAll(format);
+  } else {
+    exportPage(format);
   }
 };
 
