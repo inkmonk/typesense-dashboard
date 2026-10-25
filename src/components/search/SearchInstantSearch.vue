@@ -6,23 +6,25 @@
     :middlewares="middlewares"
   >
     <ais-configure :hits-per-page.camel="12" />
-    <ais-search-box v-slot="{ currentRefinement, refine }">
-      <debounced-search-box :model-value="currentRefinement" @refine="refine" />
-    </ais-search-box>
-    <div class="row items-center q-col-gutter-sm q-mt-xs search-controls">
-      <div class="col-auto">
-        <ais-stats></ais-stats>
+    <div class="row items-center q-col-gutter-sm no-wrap-md">
+      <div class="col-12 col-md">
+        <ais-search-box v-slot="{ currentRefinement, refine }">
+          <debounced-search-box :model-value="currentRefinement" @refine="refine" />
+        </ais-search-box>
       </div>
-      <q-space />
       <div class="col-auto">
-        <ais-hits-per-page
-          :items="[
-            { label: '12 hits per page', value: 12, default: true },
-            { label: '48 hits per page', value: 48 },
-            { label: '100 hits per page', value: 100 },
-            { label: '250 hits per page', value: 250 },
-          ]"
-        />
+        <q-input
+          v-model.number="maxCandidates"
+          label="Max candidates"
+          title="Number of similar words for prefix and typo searching"
+          type="number"
+          outlined
+          dense
+          style="width: 140px"
+          :min="0"
+          :max="10000"
+          @update:model-value="updateTypesenseAdapterConfiguration()"
+        ></q-input>
       </div>
       <div class="col-auto row items-center no-wrap">
         <span class="text-subtitle2 q-mr-xs">Sort by</span>
@@ -42,19 +44,21 @@
           @update:model-value="updateTypesenseAdapterConfiguration()"
         ></q-select>
       </div>
+    </div>
+    <div class="row items-center q-col-gutter-sm q-mt-none">
       <div class="col-auto">
-        <q-input
-          v-model.number="maxCandidates"
-          label="Max candidates"
-          title="Number of similar words for prefix and typo searching"
-          type="number"
-          outlined
-          dense
-          style="width: 140px"
-          :min="0"
-          :max="10000"
-          @update:model-value="updateTypesenseAdapterConfiguration()"
-        ></q-input>
+        <ais-stats></ais-stats>
+      </div>
+      <q-space />
+      <div class="col-auto">
+        <ais-hits-per-page
+          :items="[
+            { label: '12 hits per page', value: 12, default: true },
+            { label: '48 hits per page', value: 48 },
+            { label: '100 hits per page', value: 100 },
+            { label: '250 hits per page', value: 250 },
+          ]"
+        />
       </div>
       <div class="col-auto">
         <export-button @export="exportPage" />
