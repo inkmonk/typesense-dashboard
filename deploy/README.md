@@ -16,7 +16,7 @@ curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
 source ~/.nvm/nvm.sh && nvm install 22 && node -v
 ```
 
-`deploy.sh` finds the newest Node under `~/.nvm` by itself, so nothing else needs to be set up.
+Install **22** specifically, not "latest": the project supports the even-numbered releases (20, 22, 24, ...), and `.nvmrc` pins the major version that `deploy.sh` prefers. `deploy.sh` finds that Node under `~/.nvm` by itself, so nothing else needs to be set up.
 
 ## Every deploy
 

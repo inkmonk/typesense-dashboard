@@ -50,13 +50,17 @@ MODE="${1:-deploy}"
 PREV_ROOT="${WEB_ROOT}.prev"
 NEW_ROOT="${WEB_ROOT}.new"
 
-# nvm only loads in interactive shells, so use the newest nvm-installed Node (v20 or later)
-# when there is one; that also makes plain `ssh host ./deploy.sh` work. Without nvm the system
-# node is used. Quasar app-vite 3 needs Node 20 or newer.
+# nvm only loads in interactive shells, so pick an nvm-installed Node ourselves; that also makes
+# plain `ssh host ./deploy.sh` work. Prefer the major version in .nvmrc (22), otherwise the newest
+# v20 or later. Without nvm the system node is used. Quasar app-vite 3 needs Node 20 or newer, and
+# only the even-numbered releases (20, 22, 24, ...) are supported by the project.
 NVM_NODE_DIR="${NVM_DIR:-$HOME/.nvm}/versions/node"
 if [ -d "$NVM_NODE_DIR" ]; then
-  NVM_LATEST="$(ls -1d "$NVM_NODE_DIR"/v[2-9][0-9]* 2>/dev/null | sort -V | tail -1 || true)"
-  [ -n "$NVM_LATEST" ] && [ -d "$NVM_LATEST/bin" ] && export PATH="$NVM_LATEST/bin:$PATH"
+  WANT_MAJOR="$(tr -dc '0-9' < "$REPO_DIR/.nvmrc" 2>/dev/null || true)"
+  NVM_PICK=""
+  [ -n "$WANT_MAJOR" ] && NVM_PICK="$(ls -1d "$NVM_NODE_DIR"/v"$WANT_MAJOR".* 2>/dev/null | sort -V | tail -1 || true)"
+  [ -z "$NVM_PICK" ] && NVM_PICK="$(ls -1d "$NVM_NODE_DIR"/v[2-9][0-9]* 2>/dev/null | sort -V | tail -1 || true)"
+  [ -n "$NVM_PICK" ] && [ -d "$NVM_PICK/bin" ] && export PATH="$NVM_PICK/bin:$PATH"
 fi
 command -v node >/dev/null 2>&1 || die "node not on PATH"
 NODE_MAJOR="$(node -p 'process.versions.node.split(".")[0]')"
