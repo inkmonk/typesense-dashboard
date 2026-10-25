@@ -9,11 +9,12 @@
     <ais-search-box v-slot="{ currentRefinement, refine }">
       <debounced-search-box :model-value="currentRefinement" @refine="refine" />
     </ais-search-box>
-    <ais-stats></ais-stats>
-    <ais-current-refinements />
-
-    <div class="row q-mt-md">
-      <div class="col-3 q-pr-sm">
+    <div class="row items-center q-col-gutter-sm q-mt-xs search-controls">
+      <div class="col-auto">
+        <ais-stats></ais-stats>
+      </div>
+      <q-space />
+      <div class="col-auto">
         <ais-hits-per-page
           :items="[
             { label: '12 hits per page', value: 12, default: true },
@@ -22,35 +23,47 @@
             { label: '250 hits per page', value: 250 },
           ]"
         />
-        <q-btn flat @click="exportPage()">export current page</q-btn>
-
-        <div class="text-subtitle2 q-pt-md">Sort By</div>
+      </div>
+      <div class="col-auto row items-center no-wrap">
+        <span class="text-subtitle2 q-mr-xs">Sort by</span>
         <ais-sort-by :items="sortBy" />
-
-        <div class="text-subtitle2 q-pt-md">Stopwords</div>
+      </div>
+      <div class="col-auto">
         <q-select
           v-model="currentStopwordsSet"
           :disable="!store.data.features.stopwords"
+          label="Stopwords"
           outlined
           clearable
           dense
           options-dense
+          style="min-width: 160px"
           :options="stopwords"
           @update:model-value="updateTypesenseAdapterConfiguration()"
         ></q-select>
-
-        <div class="text-subtitle2 q-pt-md">Max Candidates</div>
+      </div>
+      <div class="col-auto">
         <q-input
           v-model.number="maxCandidates"
+          label="Max candidates"
+          title="Number of similar words for prefix and typo searching"
           type="number"
           outlined
           dense
+          style="width: 140px"
           :min="0"
           :max="10000"
-          hint="Number of similar words for prefix and typo searching"
           @update:model-value="updateTypesenseAdapterConfiguration()"
         ></q-input>
+      </div>
+      <div class="col-auto">
+        <export-button @export="exportPage" />
+      </div>
+    </div>
+    <ais-current-refinements />
 
+    <div class="row q-mt-md">
+      <div class="col-3 q-pr-sm">
         <div v-for="name in facetNumberFields" :key="name" class="q-mb-sm">
           <div class="text-subtitle2 q-pt-md">{{ name }}</div>
           <ais-range-input :searchable="true" :attribute="name" />
@@ -92,6 +105,8 @@ import { computed, ref, watch } from 'vue';
 import { useNodeStore } from '@/stores/node';
 import SearchResultItem from '@/components/search/SearchResultItem.vue';
 import DebouncedSearchBox from '@/components/search/DebouncedSearchBox.vue';
+import ExportButton from '@/components/search/ExportButton.vue';
+import type { ExportFormat } from '@/components/search/ExportButton.vue';
 import TypesenseInstantSearchAdapter from 'typesense-instantsearch-adapter';
 import type { CollectionSchema } from 'typesense/lib/Typesense/Collection';
 import type { ConfigurationOptions } from 'typesense/lib/Typesense/Configuration';
@@ -170,10 +185,11 @@ const stopwords = computed(() => {
   return store.data.stopwords.map((set) => set.id);
 });
 
-const exportPage = () => {
+const exportPage = (format: ExportFormat) => {
   if (instantSearchInstance.value && currentCollection.value) {
-    store.exportToJson(
+    store.exportRows(
       instantSearchInstance.value.renderState[currentCollection.value.name].hits.results.hits,
+      format,
     );
   }
 };
