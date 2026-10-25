@@ -5,6 +5,19 @@ The dashboard is static files that nginx serves at `https://typesense.printo.in/
 is the nginx site file for these paths. It also forwards `/pia/` to PIA, which is how the
 sign-in page reaches PIA without a cross-origin call.
 
+## Node on the server
+
+The build needs **Node 20 or newer** (Quasar app-vite 3). The server's system Node is 18, which is too
+old for the build, so install a newer one for the `ubuntu` user with nvm. This does **not** replace the
+system Node: the gateway's `typesense-auth` service keeps using `/usr/bin/node`.
+
+```bash
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash
+source ~/.nvm/nvm.sh && nvm install 22 && node -v
+```
+
+Install **22** specifically, not "latest": the project supports the even-numbered releases (20, 22, 24, ...), and `.nvmrc` pins the major version that `deploy.sh` prefers. `deploy.sh` finds that Node under `~/.nvm` by itself, so nothing else needs to be set up.
+
 ## Every deploy
 
 On the server:

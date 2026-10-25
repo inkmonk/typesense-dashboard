@@ -89,9 +89,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive } from 'vue';
+import { computed, onMounted, reactive } from 'vue';
 import { useQuasar } from 'quasar';
-import { useNodeStore } from 'src/stores/node';
+import { useNodeStore } from '@/stores/node';
 import MonacoEditor from '../components/MonacoEditor.vue';
 import type { KeyCreateSchema } from 'typesense/lib/Typesense/Key';
 import type { QTableProps } from 'quasar';
@@ -207,4 +207,8 @@ function deleteApiKey(id: string) {
     void store.deleteApiKey(id);
   });
 }
+
+onMounted(() => {
+  void store.getApiKeys();
+});
 </script>

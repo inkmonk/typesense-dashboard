@@ -88,7 +88,7 @@
           </p>
           <q-form class="login-form" @submit.prevent="loginWithApiKey()">
             <q-input
-              v-model="state.apiKey"
+              v-model="apiKey"
               outlined
               class="login-field"
               type="password"
@@ -98,19 +98,24 @@
             <div class="row q-col-gutter-sm">
               <div class="col-5">
                 <q-select
-                  v-model="state.node.protocol"
+                  v-model="store.currentNodeConfig.protocol"
                   outlined
                   class="login-field"
-                  :options="state.protocolOptions"
+                  :options="protocolOptions"
                   label="Protocol"
                 />
               </div>
               <div class="col-7">
-                <q-input v-model="state.node.host" outlined class="login-field" label="Host" />
+                <q-input
+                  v-model="store.currentNodeConfig.host"
+                  outlined
+                  class="login-field"
+                  label="Host"
+                />
               </div>
               <div class="col-5">
                 <q-input
-                  v-model.number="state.node.port"
+                  v-model.number="store.currentNodeConfig.port"
                   outlined
                   class="login-field"
                   type="number"
@@ -118,15 +123,37 @@
                 />
               </div>
               <div class="col-7">
-                <q-input v-model="state.node.path" outlined class="login-field" label="Path" />
+                <q-input
+                  v-model="store.currentNodeConfig.path"
+                  outlined
+                  class="login-field"
+                  label="Path"
+                />
               </div>
             </div>
             <p class="login-hint">
               Path is optional: leave blank, or start with / and end without /.
             </p>
+            <q-expansion-item
+              v-model="showAdvancedSettings"
+              dense
+              dense-toggle
+              label="Advanced settings"
+              class="text-left"
+            >
+              <q-input
+                v-model.number="connectionTimeoutSeconds"
+                class="q-mt-sm"
+                outlined
+                type="number"
+                label="Connection timeout (seconds)"
+                hint="Optional: leave blank for the default"
+                clearable
+              />
+            </q-expansion-item>
             <q-toggle
-              v-if="$q.platform.is.electron && state.node.protocol === 'https'"
-              v-model="state.node.tls"
+              v-if="$q.platform.is.electron && store.currentNodeConfig.protocol === 'https'"
+              v-model="store.currentNodeConfig.tls"
               label="Check TLS"
             />
             <div class="row no-wrap q-gutter-sm">
@@ -202,11 +229,11 @@
 </template>
 
 <script setup lang="ts">
-import ServerHistory from 'components/ServerHistory.vue';
-import printoLogo from 'assets/printo-logo.png';
-import { gatewayNodeConfig, useNodeStore } from 'src/stores/node';
-import { piaLoginWithGoogle, piaLoginWithPassword, piaSelectGoogleAccount } from 'src/shared/pia';
-import type { PiaGoogleAccount, PiaLoginResult } from 'src/shared/pia';
+import ServerHistory from '@/components/ServerHistory.vue';
+import printoLogo from '@/assets/printo-logo.png';
+import { useNodeStore } from '@/stores/node';
+import { piaLoginWithGoogle, piaLoginWithPassword, piaSelectGoogleAccount } from '@/shared/pia';
+import type { PiaGoogleAccount, PiaLoginResult } from '@/shared/pia';
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 
 // Google Identity Services, loaded by the script tag in index.html
@@ -224,8 +251,8 @@ interface GoogleIdentity {
 
 const store = useNodeStore();
 
-const googleClientId = process.env.GOOGLE_CLIENT_ID;
-const apiKeyLoginEnabled = process.env.ENABLE_API_KEY_LOGIN !== 'false';
+const googleClientId = import.meta.env.GOOGLE_CLIENT_ID;
+const apiKeyLoginEnabled = import.meta.env.ENABLE_API_KEY_LOGIN !== 'false';
 
 const tab = ref<'pia' | 'apikey'>('pia');
 const employeeId = ref('');
@@ -251,12 +278,12 @@ const pickerOptions = computed(() =>
   })),
 );
 
-const state = ref({
-  apiKey: '',
-  // same server the PIA sign-in uses; localhost:9000/v1 (the dev proxy) when developing
-  node: gatewayNodeConfig(),
-  protocolOptions: ['http', 'https'],
-});
+const protocolOptions = ['http', 'https'];
+const apiKey = ref('');
+const showAdvancedSettings = ref(false);
+const connectionTimeoutSeconds = ref<number | null>(
+  store.loginData?.connectionTimeoutSeconds ?? null,
+);
 
 onMounted(() => {
   void store.connectionCheck();
@@ -356,10 +383,14 @@ function switchMode() {
 
 function loginWithApiKey() {
   message.value = '';
-  void store.login({
-    apiKey: state.value.apiKey,
-    node: state.value.node,
-  });
+  const payload: Parameters<typeof store.login>[0] = {
+    apiKey: apiKey.value,
+    node: store.currentNodeConfig,
+  };
+  if (connectionTimeoutSeconds.value !== null) {
+    payload.connectionTimeoutSeconds = connectionTimeoutSeconds.value;
+  }
+  void store.login(payload);
 }
 </script>
 

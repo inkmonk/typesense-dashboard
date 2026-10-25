@@ -28,6 +28,10 @@
  * }
  */
 import { contextBridge, ipcRenderer } from 'electron';
+import { quasarRuntime } from '#q-app/electron/preload';
+
+contextBridge.exposeInMainWorld('quasarRuntime', quasarRuntime);
+
 const apiMethods = [
   'init',
   'getDebug',
@@ -51,26 +55,50 @@ const apiMethods = [
   'getStopwords',
   'upsertStopwords',
   'deleteStopwords',
+  'getStemmingDictionaries',
+  'upsertStemmingDictionaries',
+  'getStemmingDictionary',
+  'deleteStemmingDictionary',
   'getSynonyms',
   'upsertSynonym',
   'deleteSynonym',
+  'getSynonymSets',
+  'getSynonymSet',
+  'upsertSynonymSet',
+  'upsertSynonymSetItem',
+  'deleteSynonymSetItem',
+  'deleteSynonymSet',
   'getOverrides',
   'upsertOverride',
   'deleteOverride',
+  'getCurationSets',
+  'getCurationSet',
+  'upsertCurationSet',
+  'upsertCurationSetItem',
+  'deleteCurationSetItem',
+  'deleteCurationSet',
   'deleteDocumentById',
   'importDocuments',
   'exportDocuments',
   'search',
   'get',
   'post',
+  'delete',
+  'createSnapshot',
 ];
 
 const api = {
   importFile: (collectionName: any, action: any) => {
     return ipcRenderer.invoke('importFile', collectionName, action);
   },
+  importStemmingFile: (id: string) => {
+    return ipcRenderer.invoke('importStemmingFile', id);
+  },
   rejectTLS: (value: any) => {
     return ipcRenderer.invoke('rejectTLS', value);
+  },
+  openExternal: (url: string) => {
+    return ipcRenderer.invoke('openExternal', url);
   },
 };
 apiMethods.forEach((f) => {

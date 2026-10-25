@@ -101,6 +101,17 @@
                 <q-checkbox v-model="field.sort" label="sort" />
                 <q-checkbox v-model="field.infix" label="infix" />
                 <q-checkbox v-model="field.stem" label="stem" />
+                <q-select
+                  v-if="field.stem"
+                  :model-value="getStemDictionaryValue(field)"
+                  :options="stemmingDictionaryOptions"
+                  dense
+                  outlined
+                  label="Stemming Dictionary"
+                  class="q-mt-sm"
+                  style="min-width: 200px"
+                  @update:model-value="setStemDictionaryValue(field, $event)"
+                />
               </div>
 
               <q-btn size="md" padding="sm lg" unelevated @click="removeField(field)"
@@ -128,154 +139,156 @@
         padding="sm lg"
         unelevated
         color="primary"
-        @click="$emit('submit', schema)"
+        @click="emit('submit', schema)"
         >{{ primaryActionLabel }}</q-btn
       >
     </q-card-actions>
   </q-card>
 </template>
 
-<script lang="ts">
+<script setup lang="ts">
 import type {
   CollectionFieldSchema,
   CollectionSchema,
-  CollectionUpdateSchema,
 } from 'typesense/lib/Typesense/Collection';
 import type { CollectionCreateSchema } from 'typesense/lib/Typesense/Collections';
-import { defineComponent } from 'vue';
+import { computed, ref, watch } from 'vue';
+import type { PropType } from 'vue';
+import { useNodeStore } from '@/stores/node';
 import MonacoEditor from '../MonacoEditor.vue';
 
-export default defineComponent({
-  name: 'CollectionUi',
-  components: { MonacoEditor },
-  props: {
-    initialSchema: {
-      type: Object as () => CollectionCreateSchema | CollectionSchema | CollectionUpdateSchema,
-      default: () =>
-        ({
-          name: '',
-          fields: [
-            {
-              name: '',
-              type: 'string',
-              facet: false,
-              optional: false,
-              index: true,
-              sort: false,
-              infix: false,
-              stem: false,
-              locale: '',
-              num_dim: undefined,
-            } as unknown,
-          ],
-          default_sorting_field: '',
-          token_separators: [],
-          symbols_to_index: [],
-          enable_nested_fields: false,
-        }) as CollectionCreateSchema,
-    },
-    primaryActionLabel: {
-      type: String,
-      required: true,
-    },
-    createMode: {
-      type: Boolean,
-      default: false,
-    },
+interface Props {
+  initialSchema?: CollectionCreateSchema | CollectionSchema;
+  primaryActionLabel: string;
+  createMode?: boolean;
+}
+
+const props = defineProps({
+  initialSchema: {
+    type: Object as PropType<Props['initialSchema']>,
+    default: undefined,
   },
-  emits: ['submit'],
-  data() {
-    return {
-      tab: 'form',
-      schema: {
-        name: '',
-        fields: [],
-        default_sorting_field: '',
-        token_separators: [],
-        symbols_to_index: [],
-        enable_nested_fields: false,
-      } as CollectionCreateSchema,
-      types: [
-        'string',
-        'string[]',
-        'int32',
-        'int32[]',
-        'int64',
-        'int64[]',
-        'float',
-        'float[]',
-        'bool',
-        'bool[]',
-        'geopoint',
-        'geopoint[]',
-        'geopolygon',
-        'object',
-        'object[]',
-        'string*',
-        'image',
-        'auto',
-      ],
-      jsonError: null as string | null,
-    };
+  primaryActionLabel: {
+    type: String,
+    required: true,
   },
-  computed: {
-    availableSortFields(): string[] {
-      const compatibleFields = (this.schema.fields || []).filter(
-        (field) =>
-          ['int32', 'int64', 'float'].includes(field.type) ||
-          (field.type === 'string' && field.sort),
-      );
-      // empty option + compatible field names
-      return [''].concat(compatibleFields.map((field) => field.name));
-    },
-    schemaJson: {
-      get(): string {
-        return JSON.stringify(this.schema, null, 2);
-      },
-      set(json: string) {
-        try {
-          this.schema = JSON.parse(json);
-          this.jsonError = null;
-        } catch (e) {
-          this.jsonError = (e as Error).message;
-        }
-      },
-    },
-  },
-  watch: {
-    initialSchema: {
-      immediate: true,
-      handler(schema: CollectionCreateSchema) {
-        this.schema = JSON.parse(JSON.stringify(schema));
-      },
-    },
-  },
-  methods: {
-    addField() {
-      if (this.schema.fields) {
-        // @ts-expect-error custom field
-        this.schema.fields.push({
-          name: '',
-          type: 'string',
-          facet: false,
-          optional: false,
-          index: true,
-          sort: false,
-          infix: false,
-          stem: false,
-          locale: '',
-          num_dim: undefined,
-        });
-      }
-    },
-    removeField(field: CollectionFieldSchema) {
-      if (this.schema.fields) {
-        const index = this.schema.fields.indexOf(field);
-        if (index > -1) {
-          this.schema.fields.splice(index, 1);
-        }
-      }
-    },
+  createMode: {
+    type: Boolean,
+    default: false,
   },
 });
+
+const emit = defineEmits<{
+  submit: [schema: CollectionCreateSchema];
+}>();
+
+const store = useNodeStore();
+const tab = ref<'form' | 'json'>('form');
+const schema = ref<CollectionCreateSchema>(createDefaultSchema());
+const jsonError = ref<string | null>(null);
+
+const types = [
+  'string',
+  'string[]',
+  'int32',
+  'int32[]',
+  'int64',
+  'int64[]',
+  'float',
+  'float[]',
+  'bool',
+  'bool[]',
+  'geopoint',
+  'geopoint[]',
+  'geopolygon',
+  'object',
+  'object[]',
+  'string*',
+  'image',
+  'auto',
+];
+
+const availableSortFields = computed(() => {
+  const compatibleFields = schema.value.fields.filter(
+    (field) =>
+      ['int32', 'int64', 'float'].includes(field.type) ||
+      (field.type === 'string' && field.sort),
+  );
+  return [''].concat(compatibleFields.map((field) => field.name));
+});
+
+const stemmingDictionaryOptions = computed(() => {
+  return ['default'].concat(store.data.stemmingDictionaries || []);
+});
+
+const schemaJson = computed({
+  get: () => JSON.stringify(schema.value, null, 2),
+  set: (json: string) => {
+    try {
+      schema.value = JSON.parse(json);
+      jsonError.value = null;
+    } catch (error) {
+      jsonError.value = (error as Error).message;
+    }
+  },
+});
+
+watch(
+  () => props.initialSchema,
+  (initialSchema) => {
+    schema.value = cloneSchema(initialSchema ?? createDefaultSchema());
+  },
+  { immediate: true },
+);
+
+function createEmptyField(): CollectionFieldSchema {
+  return {
+    name: '',
+    type: 'string',
+    facet: false,
+    optional: false,
+    index: true,
+    sort: false,
+    infix: false,
+    stem: false,
+    locale: '',
+    stem_dictionary: '',
+  };
+}
+
+function createDefaultSchema(): CollectionCreateSchema {
+  return {
+    name: '',
+    fields: [createEmptyField()],
+    default_sorting_field: '',
+    token_separators: [],
+    symbols_to_index: [],
+    enable_nested_fields: false,
+  };
+}
+
+function cloneSchema(
+  schemaToClone: CollectionCreateSchema | CollectionSchema,
+): CollectionCreateSchema {
+  return JSON.parse(JSON.stringify(schemaToClone));
+}
+
+function addField() {
+  schema.value.fields.push(createEmptyField());
+}
+
+function removeField(field: CollectionFieldSchema) {
+  const index = schema.value.fields.indexOf(field);
+  if (index > -1) schema.value.fields.splice(index, 1);
+}
+
+function getStemDictionaryValue(field: CollectionFieldSchema) {
+  return typeof field.stem_dictionary === 'string' && field.stem_dictionary
+    ? field.stem_dictionary
+    : 'default';
+}
+
+function setStemDictionaryValue(field: CollectionFieldSchema, value: string) {
+  field.stem_dictionary = value === 'default' ? '' : value;
+}
 </script>

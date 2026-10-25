@@ -1,7 +1,39 @@
 // Configuration for your app
 // https://v2.quasar.dev/quasar-cli-vite/quasar-config-file
 
-import { defineConfig } from '#q-app/wrappers';
+import { defineConfig } from '#q-app';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
+// Read package.json to get version info
+const packageJson = JSON.parse(readFileSync(resolve('./package.json'), 'utf-8'));
+
+const devApiProxyTarget = import.meta.env.DEV_API_PROXY_TARGET;
+
+// Printo sign-in and gateway settings, baked into the build (see CLAUDE.md). Config-time values
+// come from the environment (or .env.deploy via deploy.sh); the client reads them as
+// import.meta.env.<NAME> through build.defineEnv below.
+const printoEnv = (ctx: { mode: { electron?: boolean }; dev?: boolean }) => ({
+  // Web builds call PIA through the same host (/pia/ in nginx, and the dev-server proxy below):
+  // PIA's CORS preflight carries two Access-Control-Allow-Origin values, which browsers reject.
+  // Electron has no page origin to protect, so it calls PIA directly.
+  PIA_API_URL:
+    import.meta.env.PIA_API_URL ??
+    (ctx.mode.electron ? 'https://pia.printo.in/api/v1' : '/pia/api/v1'),
+  // dev serves /v1 through the dev-server proxy below, because the live server's CORS preflight
+  // rejects http://localhost
+  TYPESENSE_API_URL:
+    import.meta.env.TYPESENSE_API_URL ??
+    (ctx.dev ? 'http://localhost:9000/v1' : 'https://typesense.printo.in/v1'),
+  // public OAuth client ID (not a secret); empty hides the Google button
+  GOOGLE_CLIENT_ID:
+    import.meta.env.GOOGLE_CLIENT_ID ??
+    '875434468582-2a7h0gahc6sq6jm3gfmre9cca1lhh0p7.apps.googleusercontent.com',
+  // Web builds sign in through PIA only. Electron (any server) and the Docker image keep the
+  // host + API key form. Set ENABLE_API_KEY_LOGIN=true for one build to bring the tab back.
+  ENABLE_API_KEY_LOGIN:
+    import.meta.env.ENABLE_API_KEY_LOGIN ?? (ctx.mode.electron ? 'true' : 'false'),
+});
 
 export default defineConfig((ctx) => {
   return {
@@ -47,49 +79,26 @@ export default defineConfig((ctx) => {
       // Web build: clean URLs (/dashboard/collections). Electron loads from file://, which needs
       // hash. The Docker image (Caddy file-server has no SPA fallback) sets VUE_ROUTER_MODE=hash.
       vueRouterMode:
-        (process.env.VUE_ROUTER_MODE as 'hash' | 'history' | undefined) ??
-        ('electron' in ctx.mode ? 'hash' : 'history'),
+        (import.meta.env.VUE_ROUTER_MODE as 'hash' | 'history' | undefined) ??
+        (ctx.mode.electron ? 'hash' : 'history'),
       // vueRouterBase,
       // vueDevtools,
-      // vueOptionsAPI: false,
+      // Required by vue-instantsearch 4.x, whose Ais components use the Options API.
+      vueOptionsAPI: true,
 
       // rebuildCache: true, // rebuilds Vite/linter/etc cache on startup
 
       // publicPath: '/',
-      publicPath:
-        process.env.PUBLIC_PATH ?? (process.env.NODE_ENV === 'development' ? '/' : '/dashboard'),
+      publicPath: import.meta.env.PUBLIC_PATH ?? (ctx.dev ? '/' : '/dashboard'),
       // deploy.sh builds into a scratch folder (DIST_DIR) so the live site keeps serving
-      ...(process.env.DIST_DIR ? { distDir: process.env.DIST_DIR } : {}),
-      // analyze: true,
-      env: {
-        // PIA (auth) and the Typesense gateway; overridable at build time
-        // Web builds call PIA through the same host (/pia/ in nginx, and the dev proxy below):
-        // PIA's CORS preflight carries two Access-Control-Allow-Origin values, which browsers
-        // reject. Electron has no page origin to protect, so it calls PIA directly.
-        PIA_API_URL:
-          process.env.PIA_API_URL ??
-          ('electron' in ctx.mode ? 'https://pia.printo.in/api/v1' : '/pia/api/v1'),
-        // dev serves /v1 through the dev-server proxy below, because the live server's
-        // CORS preflight rejects http://localhost
-        TYPESENSE_API_URL:
-          process.env.TYPESENSE_API_URL ??
-          (process.env.NODE_ENV === 'development'
-            ? 'http://localhost:9000/v1'
-            : 'https://typesense.printo.in/v1'),
-        // public OAuth client ID (not a secret); empty hides the Google button
-        GOOGLE_CLIENT_ID:
-          process.env.GOOGLE_CLIENT_ID ??
-          '875434468582-2a7h0gahc6sq6jm3gfmre9cca1lhh0p7.apps.googleusercontent.com',
-        // Web builds sign in through PIA only. Electron (any server) and the Docker image keep the
-        // host + API key form. Set ENABLE_API_KEY_LOGIN=true for one build to bring the tab back.
-        ENABLE_API_KEY_LOGIN:
-          process.env.ENABLE_API_KEY_LOGIN ?? ('electron' in ctx.mode ? 'true' : 'false'),
+      ...(import.meta.env.DIST_DIR ? { distDir: import.meta.env.DIST_DIR } : {}),
+      defineEnv: {
+        APP_VERSION: packageJson.version,
+        ...printoEnv(ctx),
       },
-      // rawDefine: {}
+      // define: {}
       // ignorePublicFolder: true,
       // minify: false,
-      // polyfillModulePreload: true,
-      // distDir
 
       // extendViteConf (viteConf) {},
       // viteVuePluginOptions: {},
@@ -113,8 +122,8 @@ export default defineConfig((ctx) => {
     devServer: {
       // https: true,
       open: true, // opens browser window automatically
-      // same-origin /v1 for local testing against the live Typesense (no CORS involved)
       proxy: {
+        // same-origin /v1 and /pia for local testing against the live hosts (no CORS involved)
         '/v1': { target: 'https://typesense.printo.in', changeOrigin: true, secure: true },
         '/pia': {
           target: 'https://pia.printo.in',
@@ -122,6 +131,16 @@ export default defineConfig((ctx) => {
           secure: true,
           rewrite: (path: string) => path.replace(/^\/pia/, ''),
         },
+        ...(devApiProxyTarget
+          ? {
+              '/api': {
+                target: devApiProxyTarget,
+                changeOrigin: true,
+                secure: false,
+                rewrite: (path: string) => path.replace(/^\/api/, ''),
+              },
+            }
+          : {}),
       },
     },
 
@@ -171,8 +190,8 @@ export default defineConfig((ctx) => {
         'render', // keep this as last one
       ],
 
-      // extendPackageJson (json) {},
-      // extendSSRWebserverConf (esbuildConf) {},
+      // extendSSRPackageJson (json) {},
+      // extendSSRWebserverConf (rolldownConf) {},
 
       // manualStoreSerialization: true,
       // manualStoreSsrContextInjection: true,
@@ -182,8 +201,8 @@ export default defineConfig((ctx) => {
       pwa: false,
       // pwaOfflineHtmlFilename: 'offline.html', // do NOT use index.html as name!
 
-      // pwaExtendGenerateSWOptions (cfg) {},
-      // pwaExtendInjectManifestOptions (cfg) {}
+      // extendSSRGenerateSWOptions (cfg) {},
+      // extendSSRInjectManifestOptions (cfg) {}
     },
 
     // https://v2.quasar.dev/quasar-cli-vite/developing-pwa/configuring-pwa
@@ -191,18 +210,16 @@ export default defineConfig((ctx) => {
       workboxMode: 'GenerateSW', // 'GenerateSW' or 'InjectManifest'
       // swFilename: 'sw.js',
       // manifestFilename: 'manifest.json',
-      // extendManifestJson (json) {},
+      // extendPWAManifestJson (json) {},
       // useCredentialsForManifestTag: true,
-      // injectPwaMetaTags: false,
-      // extendPWACustomSWConf (esbuildConf) {},
-      // extendGenerateSWOptions (cfg) {},
-      // extendInjectManifestOptions (cfg) {}
+      // injectPWAMetaTags: false,
+      // extendPWACustomSWConf (rolldownConf) {},
+      // extendPWAGenerateSWOptions (cfg) {},
+      // extendPWAInjectManifestOptions (cfg) {}
     },
 
     // Full list of options: https://v2.quasar.dev/quasar-cli-vite/developing-cordova-apps/configuring-cordova
-    cordova: {
-      // noIosLegacyBuildFlag: true, // uncomment only if you know what you are doing
-    },
+    cordova: {},
 
     // Full list of options: https://v2.quasar.dev/quasar-cli-vite/developing-capacitor-apps/configuring-capacitor
     capacitor: {
@@ -211,10 +228,10 @@ export default defineConfig((ctx) => {
 
     // Full list of options: https://v2.quasar.dev/quasar-cli-vite/developing-electron-apps/configuring-electron
     electron: {
-      // extendElectronMainConf (esbuildConf) {},
-      // extendElectronPreloadConf (esbuildConf) {},
+      // extendElectronMainConf (rolldownConf) {},
+      // extendElectronPreloadConf (rolldownConf) {},
 
-      // extendPackageJson (json) {},
+      // extendElectronPackageJson (json) {},
 
       // Electron preload scripts (if any) from /src-electron, WITHOUT file extension
       preloadScripts: ['electron-preload'],
@@ -244,7 +261,7 @@ export default defineConfig((ctx) => {
 
     // Full list of options: https://v2.quasar.dev/quasar-cli-vite/developing-browser-extensions/configuring-bex
     bex: {
-      // extendBexScriptsConf (esbuildConf) {},
+      // extendBexScriptsConf (rolldownConf) {},
       // extendBexManifestJson (json) {},
 
       /**

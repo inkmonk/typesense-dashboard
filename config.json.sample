@@ -1,0 +1,37 @@
+{
+  "apiKey": "your-api-key-here",
+  "node": {
+    "host": "localhost",
+    "port": "8108",
+    "protocol": "http",
+    "path": "",
+    "tls": false
+  },
+  "connectionTimeoutSeconds": 10,
+  "ui": {
+    "hideProjectInfo": true
+  },
+  "history": [
+    {
+      "apiKey": "another-api-key",
+      "node": {
+        "host": "production-server.com",
+        "port": "443",
+        "protocol": "https",
+        "path": "",
+        "tls": true
+      }
+    },
+    {
+      "apiKey": "another-api-key",
+      "node": {
+        "host": "production-server-2.com",
+        "port": "443",
+        "protocol": "https",
+        "path": "",
+        "tls": true
+      },
+      "clusterTag": "prod-cluster"
+    }
+  ]
+}

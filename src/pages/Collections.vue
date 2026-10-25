@@ -109,8 +109,8 @@
 <script setup lang="ts">
 import { onMounted, reactive } from 'vue';
 import { useQuasar } from 'quasar';
-import { useNodeStore } from 'src/stores/node';
-import CollectionCreate from 'src/components/collection/CollectionCreate.vue';
+import { useNodeStore } from '@/stores/node';
+import CollectionCreate from '@/components/collection/CollectionCreate.vue';
 
 const $q = useQuasar();
 const store = useNodeStore();

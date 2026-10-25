@@ -50,16 +50,22 @@ MODE="${1:-deploy}"
 PREV_ROOT="${WEB_ROOT}.prev"
 NEW_ROOT="${WEB_ROOT}.new"
 
-# nvm only loads in interactive shells; pin it when present so the script also works over
-# plain `ssh host ./deploy.sh`. Without nvm the system node is used. Quasar app-vite
-# needs Node 18.18 or newer.
-PINNED_NODE="/home/ubuntu/.nvm/versions/node/v22.22.0/bin"
-[ -d "$PINNED_NODE" ] && export PATH="$PINNED_NODE:$PATH"
-command -v node >/dev/null 2>&1 || die "node not on PATH (expected $PINNED_NODE)"
+# nvm only loads in interactive shells, so pick an nvm-installed Node ourselves; that also makes
+# plain `ssh host ./deploy.sh` work. Prefer the major version in .nvmrc (22), otherwise the newest
+# v20 or later. Without nvm the system node is used. Quasar app-vite 3 needs Node 20 or newer, and
+# only the even-numbered releases (20, 22, 24, ...) are supported by the project.
+NVM_NODE_DIR="${NVM_DIR:-$HOME/.nvm}/versions/node"
+if [ -d "$NVM_NODE_DIR" ]; then
+  WANT_MAJOR="$(tr -dc '0-9' < "$REPO_DIR/.nvmrc" 2>/dev/null || true)"
+  NVM_PICK=""
+  [ -n "$WANT_MAJOR" ] && NVM_PICK="$(ls -1d "$NVM_NODE_DIR"/v"$WANT_MAJOR".* 2>/dev/null | sort -V | tail -1 || true)"
+  [ -z "$NVM_PICK" ] && NVM_PICK="$(ls -1d "$NVM_NODE_DIR"/v[2-9][0-9]* 2>/dev/null | sort -V | tail -1 || true)"
+  [ -n "$NVM_PICK" ] && [ -d "$NVM_PICK/bin" ] && export PATH="$NVM_PICK/bin:$PATH"
+fi
+command -v node >/dev/null 2>&1 || die "node not on PATH"
 NODE_MAJOR="$(node -p 'process.versions.node.split(".")[0]')"
-NODE_MINOR="$(node -p 'process.versions.node.split(".")[1]')"
-if [ "$NODE_MAJOR" -lt 18 ] || { [ "$NODE_MAJOR" -eq 18 ] && [ "$NODE_MINOR" -lt 18 ]; }; then
-  die "Node $(node -v) is too old; need 18.18 or newer."
+if [ "$NODE_MAJOR" -lt 20 ]; then
+  die "Node $(node -v) is too old; this build needs Node 20 or newer (22 recommended). See deploy/README.md, \"Node on the server\"."
 fi
 
 # --- one deploy at a time -----------------------------------------------------
@@ -135,13 +141,17 @@ printf '%s\n' "$PREVIOUS" > "$LAST_DEPLOY_FILE"
 # strict about the lockfile matching package.json; if it does not, fall back to
 # `npm install` and put the lockfile back so the next deploy's clean-tree check passes.
 cd "$REPO_DIR"
-if [ ! -d node_modules ] || git diff --name-only "$PREVIOUS"..HEAD | grep -qE '^package(-lock)?\.json$'; then
+if [ ! -d node_modules ] || [ ! -d src-electron/node_modules ] \
+  || git diff --name-only "$PREVIOUS"..HEAD | grep -qE '^(src-electron/)?package(-lock)?\.json$'; then
   say "Installing dependencies"
   if ! npm ci --no-audit --no-fund; then
     warn "npm ci failed (lockfile out of sync) — falling back to npm install"
     npm install --no-audit --no-fund
     git checkout -- package-lock.json 2>/dev/null || true
   fi
+  # The build's type check also reads src-electron, which has its own dependencies (without
+  # them the web build fails on "Cannot find module 'electron'").
+  npm ci --prefix src-electron --ignore-scripts --no-audit --no-fund
 else
   say "No dependency changes — skipping install"
 fi

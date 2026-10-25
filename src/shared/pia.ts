@@ -29,7 +29,7 @@ export interface PiaRoles {
 // Never send cookies: PIA allows any origin, which browsers reject for credentialed requests.
 // validateStatus lets us read PIA's `{ detail }` error bodies instead of catching axios errors.
 const client = axios.create({
-  baseURL: process.env.PIA_API_URL,
+  baseURL: import.meta.env.PIA_API_URL,
   headers: { 'Content-Type': 'application/json' },
   validateStatus: () => true,
 });
